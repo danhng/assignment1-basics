@@ -62,11 +62,10 @@ def bpe_example(text, loopCount = 1):
                             if pairBytes in key: 
                                 pairFrequencyCount[pairBytes] = pairFrequencyCount.get(pairBytes, 0) + value
                                 print(f"hit {pairBytes}, add {value} to final: {pairFrequencyCount[pairBytes]})")
-            # todo: update the pretokens on new (vocab + merges)
+            # todo: update the pretokens on new (vocab + merges) -> do we really need to update the token in the pre token? 
     print(pairFrequencyCount)
 
-text = "tôi em"
-bpe_example(text)
+
 
 """
 Input: word: bytes to split, vocab: dict used to split
@@ -80,14 +79,25 @@ def splitVocab(word, vocab):
     output = []
     while (len(leftWord) > 0):
         i = len(leftWord)
-        while i < len(word): 
-            currentCandidate =  bytes(word[:len(word) - len(leftWord)])
+        for m in range(i, 0, -1):
+            currentCandidate =  bytes(leftWord[:m], "utf-8")
+            # currentCandidate =  leftWord[:m]
+            print(f"checking candidate {currentCandidate}")
             if currentCandidate in vocab: 
                 output.append(currentCandidate)
-                leftWord = word[len(leftWord):]
+                leftWord = leftWord[m:i] # update the candidate
+                print(f"add {currentCandidate} to output, left word: {leftWord}")
+                break
+            if m == 1: 
+                print(f"error, could not find suitable vocab for {leftWord}, check the vocab again!")
+                output.append(leftWord)
+                leftWord = ""
+                break
+    return output
 
         
 
-
+vocab = list([s.encode() for s in ["a", "b", "c", "ab", "bc", "d"]])
+print(splitVocab("abcdee", vocab)) # ab, c, c
 
     
