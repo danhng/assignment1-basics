@@ -11,6 +11,36 @@ import io
 def tupleBytes(text): 
     return tuple(char.encode('utf-8') for char in text)
 
+
+"""
+Input: word: bytes to split, vocab: dict used to split
+Output: list of bytes 
+"""
+def splitVocab(word, vocab): 
+    # loop through all possible sub words from longest (whole word) to smallest (characters), 
+    # if found in vocab -> add to output, remove the sub words from words. continue until no sub words left.
+    # if not found in vocab after smallest, return the remaining sub words as is. 
+    leftWord = word
+    output = []
+    while (len(leftWord) > 0):
+        i = len(leftWord)
+        for m in range(i, 0, -1):
+            currentCandidate =  bytes(leftWord[:m], "utf-8")
+            # currentCandidate =  leftWord[:m]
+            print(f"checking candidate {currentCandidate}")
+            if currentCandidate in vocab: 
+                output.append(currentCandidate)
+                leftWord = leftWord[m:i] # update the candidate
+                print(f"add {currentCandidate} to output, left word: {leftWord}")
+                break
+            if m == 1: 
+                print(f"error, could not find suitable vocab for {leftWord}, check the vocab again!")
+                output.append(leftWord)
+                leftWord = ""
+                break
+    return output
+
+
 def bpe_example(text, loopCount = 1): 
     # Step 1: Vocalbulary init
     # map(int -> bytes)
@@ -45,14 +75,18 @@ def bpe_example(text, loopCount = 1):
         print("Round", loopCount)
         pairFrequencyCount = {}
         pairChecked = set()
+        maxFrequencyPairCount = 0
+        maxPair = bytes()
+        # iterate through each lines
         for line in io.StringIO(text):
             line = line.strip()
             words = line.split() # [low, low, lowest]
             for word in words: # low
-                wordBytes = tupleBytes(word) # tuple of bytes
+                wordBytes = splitVocab(word, vocab) # tuple of bytes
                 # check for adjacent pairs in each pre token
                 pairs = list(zip(wordBytes[:-1], wordBytes[1:])) # TODO: based on current vocab
                 print(f"checking word {wordBytes} -> pairs {pairs}")
+                
                 for pair in pairs: 
                     if pair not in pairChecked: 
                         pairBytes = b''.join(pair)
@@ -62,38 +96,17 @@ def bpe_example(text, loopCount = 1):
                             if pairBytes in key: 
                                 pairFrequencyCount[pairBytes] = pairFrequencyCount.get(pairBytes, 0) + value
                                 print(f"hit {pairBytes}, add {value} to final: {pairFrequencyCount[pairBytes]})")
+                        # update the current max pair if frequency count is bigger or (the same count and lexicography bigger)
+                        if (pairFrequencyCount[pairBytes] > maxFrequencyPairCount) or ((pairFrequencyCount[pairBytes] == maxFrequencyPairCount) and (pairBytes > maxPair)) : 
+                            maxPair = pairBytes
+                            maxFrequencyPairCount = pairFrequencyCount[pairBytes]    
+        # debug results after each round
+        print(f"found max pair: {maxPair}, count: {maxFrequencyPairCount}")
+            # after iterate, add max pair to vocab
+        vocab[maxPair] = len(vocab)
             # todo: update the pretokens on new (vocab + merges) -> do we really need to update the token in the pre token? 
-    print(pairFrequencyCount)
+        print(pairFrequencyCount)
 
-
-
-"""
-Input: word: bytes to split, vocab: dict used to split
-Output: list of bytes 
-"""
-def splitVocab(word, vocab): 
-    # loop through all possible sub words from longest (whole word) to smallest (characters), 
-    # if found in vocab -> add to output, remove the sub words from words. continue until no sub words left.
-    # if not found in vocab after smallest, return the remaining sub words as is. 
-    leftWord = word
-    output = []
-    while (len(leftWord) > 0):
-        i = len(leftWord)
-        for m in range(i, 0, -1):
-            currentCandidate =  bytes(leftWord[:m], "utf-8")
-            # currentCandidate =  leftWord[:m]
-            print(f"checking candidate {currentCandidate}")
-            if currentCandidate in vocab: 
-                output.append(currentCandidate)
-                leftWord = leftWord[m:i] # update the candidate
-                print(f"add {currentCandidate} to output, left word: {leftWord}")
-                break
-            if m == 1: 
-                print(f"error, could not find suitable vocab for {leftWord}, check the vocab again!")
-                output.append(leftWord)
-                leftWord = ""
-                break
-    return output
 
         
 
