@@ -1,20 +1,21 @@
 import os
 import math
+import time
 from typing import BinaryIO
 import regex as re
 
 import io
 import logging
 
+from tqdm import tqdm
+
 # 1. Create a custom logger
 logger = logging.getLogger('fast_bpe')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 # 2. Create handlers
 c_handler = logging.StreamHandler()  # For console
 f_handler = logging.FileHandler('app.log', mode='w')  # For file
-c_handler.setLevel(logging.DEBUG)
-f_handler.setLevel(logging.DEBUG)
 
 # 3. Create formatters and add to handlers
 c_format = logging.Formatter('%(levelname)s - line %(lineno)d - %(message)s')
@@ -52,7 +53,7 @@ def find_chunk_boundaries(
 
     mini_chunk_size = 4096  # Read ahead by 4k bytes at a time
 
-    for bi in range(len(chunk_boundaries)):
+    for bi in tqdm(range(len(chunk_boundaries)), desc="find_chunk_boundaries"):
         initial_position = chunk_boundaries[bi]
         file.seek(initial_position)  # Start at boundary guess
         while True:
@@ -84,11 +85,10 @@ def initPretoken(inputPath: str | os.PathLike, splitTokens: str, specialTokens: 
     """
     with open(inputPath, "rb") as f:
         delimTokens = specialTokens + [splitTokens]
-        boundaries = find_chunk_boundaries(f, 200, bytes(splitTokens, "utf-8"))
-        print(boundaries)
+        boundaries = find_chunk_boundaries(f, chunkSizeToProcess, bytes(splitTokens, "utf-8"))
         # The following is a serial implementation, but you can parallelize this
         # by sending each start/end pair to a set of processes.
-        for start, end in zip(boundaries[:-1], boundaries[1:]):
+        for start, end in tqdm(zip(boundaries[:-1], boundaries[1:]), desc="Init Pretoken"):
             f.seek(start)
             chunk = f.read(end - start).decode("utf-8", errors="ignore").strip()
             splitTokenRegex = r"|"+"|".join( re.escape(escapedToken) for escapedToken in(delimTokens))
@@ -181,11 +181,15 @@ def run_train_bpe(
     split_text_token = "<|endoftext|>",
     **kwargs,
 ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
+    start_time = time.perf_counter()
     pretokens = initPretoken(inputPath=input_path, splitTokens=split_text_token,specialTokens=special_tokens)
-    logger.debug(f"init pretoken: {pretokens}")
+    end_time1 = time.perf_counter()
+    elapsed_time1 = end_time1 - start_time
+    logger.info(f"Init pretokens: Vocab size: {vocab_size}, Elapsed time: {elapsed_time1:.4f} seconds")
+    # logger.debug(f"init pretoken: {pretokens}")
     vocab = {}
     merges = []
-    for iteration in range(vocab_size): 
+    for iteration in tqdm(range(vocab_size), desc="Training vocab"): 
         maxPair = getMaxPairCount(pretokens)
         pretokens = mergePretoken(pretokens, maxPair)
         logger.debug(f"iter {iteration}: max pair: {maxPair}")
@@ -196,12 +200,16 @@ def run_train_bpe(
     #add special token to vocab
     for specialToken in special_tokens: 
         vocab[len(vocab)] = specialToken
-    # todo: add base vocab and special tokens
+    end_time2 = time.perf_counter()
+    elapsed_time2 = end_time2 - start_time
+    logger.info(f"Vocab size: {vocab_size}, Elapsed time: {elapsed_time2:.4f} seconds")
+    with open(f"{input_path}-{vocab_size}.txt", "w") as file:
+        for merge in merges: 
+            file.write(f"{merge[0]}-{merge[1]}\n")
     return vocab, merges
 
 ## Usage
 splitTextToken = "<|endoftext|>"
 specialTokens = []
-print(os.getcwd())
-print(run_train_bpe("assignment1-basics/data/test.txt", 6, specialTokens, splitTextToken)[1])
+run_train_bpe("data/TinyStoriesV2-GPT4-train.txt", 10000, specialTokens, splitTextToken)
 # print(initPretoken("data/test.txt", splitTextToken, specialTokens))
