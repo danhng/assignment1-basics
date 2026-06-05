@@ -165,9 +165,8 @@ def mergePretokenCache(pretokens, maxPair, pairCache):
         # create the cache for max pair (maxword -> {word: count})
         newPretoken = []
         i = 0
-        while i < (len(word) - 1): 
-            targetPair = tuple([''.join(word[i]), ''.join(word[i+1])])
-            if i < len(word)-1 and targetPair == maxPair[0]: 
+        while i < len(word): 
+            if i < len(word)-1 and tuple([''.join(word[i]), ''.join(word[i+1])]) == maxPair[0]: 
                 newPretoken.append(maxPair[0])
                 # todo: reindex pair cache after merge
                 i=i+2 # advance past current pair
@@ -198,7 +197,7 @@ def mergePretokenCache(pretokens, maxPair, pairCache):
                     del pairCache[oldAdjacentPair][word] # remove the old pair cache. Ex. {w, e -> {(l, o, w, e, r) -> 1, (w, e, s, t) -> 1}} => {w, e -> {(w, e, s, t) -> 1}}
                     if not pairCache[oldAdjacentPair]: 
                         del pairCache[oldAdjacentPair]
-            elif (i < len(word) - 2 and maxPair[0] != tuple([''.join(word[i+1]), ''.join(word[i+2])])) or (i > 1 and maxPair[0] != tuple([''.join(word[i-2]), ''.join(word[i-1])])): 
+            elif (i < len(word) - 2 and maxPair[0] != tuple([''.join(word[i+1]), ''.join(word[i+2])])) and (i > 1 and maxPair[0] != tuple([''.join(word[i-2]), ''.join(word[i-1])])): 
                 pairCache[newPretokenPair][newPretoken] = pairCache[newPretokenPair][word] 
                 del pairCache[newPretokenPair][word] 
         pretokens[newPretoken] = pretokens[word]         # add new preToken to pretokenMap
