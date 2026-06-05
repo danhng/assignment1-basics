@@ -11,7 +11,7 @@ from tqdm import tqdm
 
 # 1. Create a custom logger
 logger = logging.getLogger('fast_bpe')
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 # 2. Create handlers
 c_handler = logging.StreamHandler()  # For console
@@ -91,7 +91,7 @@ def initPretoken(inputPath: str | os.PathLike, splitTokens: str, specialTokens: 
         for start, end in tqdm(zip(boundaries[:-1], boundaries[1:]), desc="Init Pretoken"):
             f.seek(start)
             chunk = f.read(end - start).decode("utf-8", errors="ignore").strip()
-            splitTokenRegex = r"|"+"|".join( re.escape(escapedToken) for escapedToken in(delimTokens))
+            splitTokenRegex = r"|"+"|".join(re.escape(escapedToken) for escapedToken in(delimTokens))
             chunk = re.sub(splitTokenRegex, "", chunk)
             if chunk:
                 # remove special tokens
@@ -107,8 +107,9 @@ def initPretoken(inputPath: str | os.PathLike, splitTokens: str, specialTokens: 
 Give the pretokens, count the adjacent pairs count 
 return map tuple[str, str] -> count
 {('u',): 1, (' ', 'd', 'o', 'n'): 1, ("'", 't'): 1 ...
+pair cache (map of map): {(o, w) -> {(l, (o, w)) -> 3}, ...}}
 """
-def getMaxPairCount(pretokens): 
+def getMaxPairCount(pretokens, initPairCache = False, pairCache = {}): 
     pairs = {}
     maxPairCount = 0
     maxPair = tuple()
@@ -116,12 +117,18 @@ def getMaxPairCount(pretokens):
         # zip to create pairs. 
         for i in range(len(word) - 1): 
             targetPair = tuple([''.join(word[i]), ''.join(word[i+1])]) # todo flatten tuple bytes
+            # todo: iterate through all pair cache instead of words.
             pairs[targetPair] = pairs.get(targetPair, 0) + count
             # compare max and lexicographic
             if (pairs[targetPair] > maxPairCount) or ((pairs[targetPair] == maxPairCount) and (targetPair > maxPair)):
                 maxPairCount = pairs[targetPair]
                 maxPair = targetPair
-    return tuple([maxPair, maxPairCount])
+            if initPairCache: 
+                if targetPair not in pairCache: 
+                    pairCache[targetPair] = {}
+                pairCache[targetPair][word] = count
+                    
+    return tuple([maxPair, maxPairCount]), pairCache
 
 """
     return new pre token after maxpair is merged
@@ -136,6 +143,7 @@ def mergePretoken(pretokens, maxPair):
         while i < (len(pretoken)): 
             if i < len(pretoken)-1 and tuple([''.join(pretoken[i]), ''.join(pretoken[i+1])]) == maxPair[0]: 
                 newPretoken.append(maxPair[0])
+                # todo: reindex pair cache after merge
                 i=i+2 # advance past current pair
             else:
                 newPretoken.append(pretoken[i])
@@ -143,6 +151,61 @@ def mergePretoken(pretokens, maxPair):
         # logger.debug(f"new merged token: {pretoken} -> {newPretoken}")
         newPreTokens[tuple(newPretoken)] = count
     return newPreTokens
+
+
+"""
+    return new pre token after maxpair is merged
+"""
+def mergePretokenCache(pretokens, maxPair, pairCache):
+    # loop through all pretoken
+    # replace pair of bytes with maxPair
+    maxPairBytes = maxPair[0]
+    wordsToProcess = pairCache[maxPairBytes]
+    for word in wordsToProcess: 
+        # create the cache for max pair (maxword -> {word: count})
+        newPretoken = []
+        i = 0
+        while i < (len(word) - 1): 
+            targetPair = tuple([''.join(word[i]), ''.join(word[i+1])])
+            if i < len(word)-1 and targetPair == maxPair[0]: 
+                newPretoken.append(maxPair[0])
+                # todo: reindex pair cache after merge
+                i=i+2 # advance past current pair
+            else:
+                newPretoken.append(word[i])
+                i = i+1
+        
+        newPretoken = tuple(newPretoken)
+        # iterate through pair in new Pretoken to do the recalculation
+        for i in range(len(word) - 1): 
+            newPretokenPair = tuple([''.join(word[i]), ''.join(word[i+1])])
+            if newPretokenPair == maxPair[0]: 
+                if i > 0:
+                    newPair = tuple([''.join(word[i-1]), ''.join(maxPair[0])]) # h, ow
+                    oldAdjacentPair = tuple([''.join(word[i-1]), ''.join(word[i])]) # h, o
+                    if newPair not in pairCache: 
+                        pairCache[newPair] = {}
+                    pairCache[newPair][newPretoken] = pairCache[oldAdjacentPair][word] # h, ow -> {(h, ow) -> 1} 
+                    del pairCache[oldAdjacentPair][word] # remove the old pair cache. Ex. {h, o -> {(h, o, w) -> 1, (h, o, t) -> 1}} => {h, o -> {(h, o, t) -> 1}}
+                    if not pairCache[oldAdjacentPair]: 
+                        del pairCache[oldAdjacentPair]
+                if i < len(word) - 2:
+                    newPair = tuple([''.join(maxPair[0]), ''.join(word[i+2])]) # ow, e
+                    oldAdjacentPair = tuple([''.join(word[i+1]), ''.join(word[i+2])]) # w, e
+                    if newPair not in pairCache: 
+                        pairCache[newPair] = {}
+                    pairCache[newPair][newPretoken] = pairCache[oldAdjacentPair][word] # ow, e -> {(l, ow, e, r) -> 1} 
+                    del pairCache[oldAdjacentPair][word] # remove the old pair cache. Ex. {w, e -> {(l, o, w, e, r) -> 1, (w, e, s, t) -> 1}} => {w, e -> {(w, e, s, t) -> 1}}
+                    if not pairCache[oldAdjacentPair]: 
+                        del pairCache[oldAdjacentPair]
+            elif (i < len(word) - 2 and maxPair[0] != tuple([''.join(word[i+1]), ''.join(word[i+2])])) or (i > 1 and maxPair[0] != tuple([''.join(word[i-2]), ''.join(word[i-1])])): 
+                pairCache[newPretokenPair][newPretoken] = pairCache[newPretokenPair][word] 
+                del pairCache[newPretokenPair][word] 
+        pretokens[newPretoken] = pretokens[word]         # add new preToken to pretokenMap
+        del pretokens[word] # remove word h, o, w
+    del pairCache[maxPair[0]] # remove the old pair (as they are merged to one token), o, w -> {}
+    # remove maxpair as pair from the cache after merge
+    return pretokens
 
 """Given the path to an input corpus, run train a BPE tokenizer and
     output its vocabulary and merges.
@@ -186,14 +249,19 @@ def run_train_bpe(
     end_time1 = time.perf_counter()
     elapsed_time1 = end_time1 - start_time
     logger.info(f"Init pretokens: Vocab size: {vocab_size}, Elapsed time: {elapsed_time1:.4f} seconds")
+    logger.info(f"Init pretokens: {pretokens }")
     # logger.debug(f"init pretoken: {pretokens}")
     vocab = {}
     merges = []
+    pairCache = {}
     for iteration in tqdm(range(vocab_size), desc="Training vocab"): 
-        maxPair = getMaxPairCount(pretokens)
-        pretokens = mergePretoken(pretokens, maxPair)
-        logger.debug(f"iter {iteration}: max pair: {maxPair}")
-        logger.debug(f"iter {iteration}: pretokens: {pretokens}")
+        logger.debug(f"iteration {iteration}")
+        maxPair, pairCache = getMaxPairCount(pretokens, iteration == 0, pairCache)
+        pretokens = mergePretokenCache(pretokens, maxPair, pairCache)
+        logger.debug(pairCache)
+        logger.debug(pretokens)
+        logger.info(f"iter {iteration}: max pair: {maxPair}")
+        logger.info(f"iter {iteration}: pretokens: {pretokens}")
         if (maxPair[1] > 0):
             vocab[len(vocab)] = maxPair[0]
             merges.append(maxPair[0])
@@ -211,5 +279,5 @@ def run_train_bpe(
 ## Usage
 splitTextToken = "<|endoftext|>"
 specialTokens = []
-run_train_bpe("data/TinyStoriesV2-GPT4-train.txt", 10000, specialTokens, splitTextToken)
+run_train_bpe("assignment1-basics/data/test.txt", 6, specialTokens, splitTextToken)
 # print(initPretoken("data/test.txt", splitTextToken, specialTokens))
