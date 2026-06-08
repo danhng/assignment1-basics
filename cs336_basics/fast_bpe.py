@@ -41,6 +41,7 @@ def find_chunk_boundaries(
     # Get total file size in bytes
     file.seek(0, os.SEEK_END)
     file_size = file.tell()
+    logger.info(f"File size: {file_size}")
     file.seek(0)
 
     # chunk_size = file_size // desired_num_chunks
@@ -107,18 +108,18 @@ def initPretoken(inputPath: str | os.PathLike, splitTokens: str, specialTokens: 
 Give the pretokens, count the adjacent pairs count 
 return map tuple[str, str] -> count
 {('u',): 1, (' ', 'd', 'o', 'n'): 1, ("'", 't'): 1 ...
-pair cache (map of map): {(o, w) -> {(l, (o, w)) -> 3}, ...}}
+pair cache (map of map): {(o, w) -> {(l, (o, w)) -> [<number of words>, <number of occurences>]}, ...}}
 """
 def getMaxPairCount(pretokens, initPairCache = False, pairCache = {}): 
     pairs = {}
     maxPairCount = 0
     maxPair = tuple()
-    for word, count in pretokens.items(): 
+    for word, wordCount in pretokens.items(): 
         # zip to create pairs. 
         for i in range(len(word) - 1): 
             targetPair = tuple([''.join(word[i]), ''.join(word[i+1])]) # todo flatten tuple bytes
             # todo: iterate through all pair cache instead of words.
-            pairs[targetPair] = pairs.get(targetPair, 0) + count
+            pairs[targetPair] = pairs.get(targetPair, 0) + wordCount
             # compare max and lexicographic
             if (pairs[targetPair] > maxPairCount) or ((pairs[targetPair] == maxPairCount) and (targetPair > maxPair)):
                 maxPairCount = pairs[targetPair]
@@ -126,8 +127,10 @@ def getMaxPairCount(pretokens, initPairCache = False, pairCache = {}):
             if initPairCache: 
                 if targetPair not in pairCache: 
                     pairCache[targetPair] = {}
-                pairCache[targetPair][word] = pairCache[targetPair].get(word, 0) + count # append count to handle to multi-pair in a word
-                    
+                if word not in pairCache[targetPair]: 
+                    pairCache[targetPair][word] = [0, 0]
+                pairCache[targetPair][word][0] = wordCount # append count to handle to multi-pair in a word
+                pairCache[targetPair][word][1] = pairCache[targetPair][word][1] + 1 # append count to handle to multi-pair in a word
     return tuple([maxPair, maxPairCount]), pairCache
 
 """
@@ -177,44 +180,91 @@ def mergePretokenCache(pretokens, maxPair, pairCache):
         newPretoken = tuple(newPretoken)
         # iterate through pair in new Pretoken to do the recalculation
         logger.debug(f"merging word: {word}, max pair: {maxPair}")
-        i = 0 
-        mapPairProcessed = set()
-        while i < (len(word) - 1):
-            newPretokenPair = tuple([''.join(word[i]), ''.join(word[i+1])])
-            logger.debug(f"checking pair {newPretokenPair} at index: {i} of word {word} ")
-            if newPretokenPair == maxPair[0]: 
-                if i > 0:
-                    newPair = tuple([''.join(word[i-1]), ''.join(maxPair[0])]) # h, ow
-                    oldAdjacentPair = tuple([''.join(word[i-1]), ''.join(word[i])]) # h, o
-                    if newPair not in pairCache: 
-                        pairCache[newPair] = {}
-                    pairCache[newPair][newPretoken] = pairCache[oldAdjacentPair][word] # h, ow -> {(h, ow) -> 1} 
-                    # TODO: WRONG, ONLY DELETE IF NO COUNT OF THAT PAIR LEFT
-                    del pairCache[oldAdjacentPair][word] # remove the old pair cache. Ex. {h, o -> {(h, o, w) -> 1, (h, o, t) -> 1}} => {h, o -> {(h, o, t) -> 1}}
-                    if not pairCache[oldAdjacentPair]: 
-                        del pairCache[oldAdjacentPair]
-                    mapPairProcessed.add(oldAdjacentPair)
-                if i < len(word) - 2:
-                    newPair = tuple([''.join(maxPair[0]), ''.join(word[i+2])]) # ow, e
-                    oldAdjacentPair = tuple([''.join(word[i+1]), ''.join(word[i+2])]) # w, e
-                    if newPair not in pairCache: 
-                        pairCache[newPair] = {}
-                    pairCache[newPair][newPretoken] = pairCache[oldAdjacentPair][word] # ow, e -> {(l, ow, e, r) -> 1} 
-                    # TODO: WRONG, ONLY DELETE IF NO COUNT OF THAT PAIR LEFT
-                    del pairCache[oldAdjacentPair][word] # remove the old pair cache. Ex. {w, e -> {(l, o, w, e, r) -> 1, (w, e, s, t) -> 1}} => {w, e -> {(w, e, s, t) -> 1}}
-                    if not pairCache[oldAdjacentPair]: 
-                        del pairCache[oldAdjacentPair]
-                    mapPairProcessed.add(oldAdjacentPair)
-                logger.debug(f"found max pair in new pretoken {newPretoken} at index {i}, processed pair: {mapPairProcessed}")
-                i = i + 2
+        currentWordIndex = 0
+        newIndex = 0
+        currentWordIndicesProcessed = set() 
+        newIndicesProcessed = set() 
+        while currentWordIndex < (len(word) - 1):
+            checkingPretokenPair = tuple([''.join(word[currentWordIndex]), ''.join(word[currentWordIndex+1])])
+            logger.debug(f"checking pair {checkingPretokenPair} at index: {currentWordIndex} of word {word} ")
+            if checkingPretokenPair == maxPair[0]: 
+                if currentWordIndex > 0:
+                    # newOverlappingPairBehind = tuple([''.join(word[i-1]), ''.join(maxPair[0])]) # h, ow
+                    newOverlappingPairBehind = tuple([''.join(newPretoken[newIndex-1]), ''.join(maxPair[0])]) # h, ow
+                    oldAdjacentPair = tuple([''.join(word[currentWordIndex-1]), ''.join(word[currentWordIndex])]) # h, o
+                    checkNewIndex = newIndex-1
+                    checkCurrentIndex = currentWordIndex-1
+
+                    if (checkNewIndex not in newIndicesProcessed): 
+                        if newOverlappingPairBehind not in pairCache: 
+                            pairCache[newOverlappingPairBehind] = {}
+                        if newPretoken not in pairCache[newOverlappingPairBehind]: 
+                            pairCache[newOverlappingPairBehind][newPretoken] = [pairCache[oldAdjacentPair][word][0], 0]
+                        pairCache[newOverlappingPairBehind][newPretoken][1] = pairCache[newOverlappingPairBehind][newPretoken][1] + 1 # only append 1 to occurences.
+                        newIndicesProcessed.add(checkNewIndex)
+                    else: 
+                        logger.debug(f"oops: found processed overlapp pair behind at new index {checkNewIndex}, old pair {oldAdjacentPair}, new pair {newOverlappingPairBehind}")
+
+                    if (checkCurrentIndex not in currentWordIndicesProcessed): 
+                        pairCache[oldAdjacentPair][word][1] = pairCache[oldAdjacentPair][word][1] - 1 # subtract 1
+                        if pairCache[oldAdjacentPair][word][1] <= 0: 
+                            logger.debug(f"old adjacent pair {oldAdjacentPair}, word {word} reaches 0 occurences, removing from pair cache")
+                            del pairCache[oldAdjacentPair][word] # remove the old pair cache. Ex. {h, o -> {(h, o, w) -> 1, (h, o, t) -> 1}} => {h, o -> {(h, o, t) -> 1}}
+                        if not pairCache[oldAdjacentPair]: 
+                            logger.debug(f"old adjacent pair {oldAdjacentPair} has no relevant word left, removing from pair cache")
+                            del pairCache[oldAdjacentPair]
+                        currentWordIndicesProcessed.add(checkCurrentIndex)
+                    else: 
+                        logger.debug(f"oops: found processed overlapp pair behind at old index {checkCurrentIndex}, old pair {oldAdjacentPair}, new pair {newOverlappingPairBehind}")
+
+                if currentWordIndex < len(word) - 2:
+                    # newOverlappingPairAhead = tuple([''.join(maxPair[0]), ''.join(word[i+2])]) # ow, e
+                    newOverlappingPairAhead = tuple([''.join(maxPair[0]), ''.join(newPretoken[newIndex+1])]) # ow, e
+                    checkNewIndex = newIndex
+                    oldAdjacentPair = tuple([''.join(word[currentWordIndex+1]), ''.join(word[currentWordIndex+2])]) # w, e
+                    checkCurrentIndex = currentWordIndex+1
+
+                    if (checkNewIndex not in newIndicesProcessed): 
+                        if newOverlappingPairAhead not in pairCache: 
+                            pairCache[newOverlappingPairAhead] = {}
+                        if newPretoken not in pairCache[newOverlappingPairAhead]: 
+                            pairCache[newOverlappingPairAhead][newPretoken] = [pairCache[oldAdjacentPair][word][0], 0]
+                        pairCache[newOverlappingPairAhead][newPretoken][1] = pairCache[newOverlappingPairAhead][newPretoken][1] + 1 # only append 1 to occurences.
+                        newIndicesProcessed.add(checkNewIndex)
+                    else: 
+                        logger.debug(f"oops: found processed overlapp pair ahead at new index {checkNewIndex}, old pair {oldAdjacentPair}, new pair {newOverlappingPairAhead}")
+                    if (checkCurrentIndex not in currentWordIndicesProcessed): 
+                        pairCache[oldAdjacentPair][word][1] = pairCache[oldAdjacentPair][word][1] - 1 # subtract 1
+                        if pairCache[oldAdjacentPair][word][1] <= 0: 
+                            logger.debug(f"old adjacent pair {oldAdjacentPair}, word {word} reaches 0 occurences, removing from pair cache")
+                            del pairCache[oldAdjacentPair][word] # remove the old pair cache. Ex. {h, o -> {(h, o, w) -> 1, (h, o, t) -> 1}} => {h, o -> {(h, o, t) -> 1}}
+                        if not pairCache[oldAdjacentPair]: 
+                            logger.debug(f"old adjacent pair {oldAdjacentPair} has no relevant word left, removing from pair cache")
+                            del pairCache[oldAdjacentPair]
+                        currentWordIndicesProcessed.add(checkCurrentIndex)
+                    else: 
+                        logger.debug(f"oops: found processed overlapp pair behind at old index {checkCurrentIndex}, old pair {oldAdjacentPair}, new pair {newOverlappingPairAhead}")    
+                logger.debug(f"found max pair in new pretoken {newPretoken} at index {currentWordIndex}")
+                currentWordIndex = currentWordIndex + 2
+                newIndex = newIndex+1 # keep track of new index
                 continue
-            elif (i >= len(word) - 2 or (i < len(word) - 2 and maxPair[0] != tuple([''.join(word[i+1]), ''.join(word[i+2])]))) and (i <= 1 or (i > 1 and maxPair[0] != tuple([''.join(word[i-2]), ''.join(word[i-1])]))):
-                pairCache[newPretokenPair][newPretoken] = pairCache[newPretokenPair][word] 
-                # TODO: WRONG, ONLY DELETE IF NO COUNT OF THAT PAIR LEFT
-                del pairCache[newPretokenPair][word] 
-                mapPairProcessed.add(newPretokenPair)
-                logger.debug(f"update un-adjacent pair {newPretokenPair} in new pretoken {newPretoken} at index {i}, processed pair: {mapPairProcessed}")
-            i = i + 1
+            # only skip look ahead, look behind is never checked 
+            if (currentWordIndex >= len(word) - 2 or (currentWordIndex < len(word) - 2 and maxPair[0] != tuple([''.join(word[currentWordIndex+1]), ''.join(word[currentWordIndex+2])]))):
+            # if (currentWordIndex >= len(word) - 2 or (currentWordIndex < len(word) - 2 and maxPair[0] != tuple([''.join(word[currentWordIndex+1]), ''.join(word[currentWordIndex+2])]))) and (currentWordIndex <= 1 or (currentWordIndex > 0 and maxPair[0] != tuple([''.join(word[currentWordIndex-1]), ''.join(word[currentWordIndex])]))):
+                logger.debug(f"found normal non overlapping pair at cur index {currentWordIndex}: {checkingPretokenPair}")
+                if maxPair[0] == tuple(['o', 'o']) and checkingPretokenPair == tuple(['O','o']): 
+                    print("here 2")
+                # pairCache[checkingPretokenPair][newPretoken] = pairCache[checkingPretokenPair][word]
+                if newPretoken not in pairCache[checkingPretokenPair]: 
+                    pairCache[checkingPretokenPair][newPretoken] = [pairCache[checkingPretokenPair][word][0], 0]               
+                pairCache[checkingPretokenPair][newPretoken][1] = pairCache[checkingPretokenPair][newPretoken][1] + 1               
+                # subtract 1 from pair cache of current pair for old word
+                pairCache[checkingPretokenPair][word][1] = pairCache[checkingPretokenPair][word][1] - 1 #
+                if pairCache[checkingPretokenPair][word][1] <= 0:
+                    logger.debug(f"current un-adjacent {checkingPretokenPair} has no relevant with word {word} left, removing from pair cache")
+                    del pairCache[checkingPretokenPair][word]
+            currentWordIndex = currentWordIndex + 1
+            newIndex = newIndex+1 # keep track of new index of new Pre token
         pretokens[newPretoken] = pretokens[word]         # add new preToken to pretokenMap
         del pretokens[word] # remove word h, o, w
     del pairCache[maxPair[0]] # remove the old pair (as they are merged to one token), o, w -> {}
@@ -224,14 +274,16 @@ def mergePretokenCache(pretokens, maxPair, pairCache):
 """
 Transfer count to new pair
 """
-# def processPairCache(pairCache, newPretokenPair, oldPretokenPair, newPreToken, word): 
-#         if newPretokenPair not in pairCache: 
-#             pairCache[newPretokenPair] = {}
-#         pairCache[newPretokenPair][newPreToken] = pairCache[oldPretokenPair].get(word, 0) # ow, e -> {(l, ow, e, r) -> 1} 
-#         del pairCache[oldAdjacentPair][word] # remove the old pair cache. Ex. {w, e -> {(l, o, w, e, r) -> 1, (w, e, s, t) -> 1}} => {w, e -> {(w, e, s, t) -> 1}}
-#         if not pairCache[oldAdjacentPair]: 
-#             del pairCache[oldAdjacentPair]
-# return
+def processPairCache(pairCache, newPretokenPair, oldPretokenPair, newPreToken, word, count): 
+    if newPretokenPair not in pairCache: 
+        pairCache[newPretokenPair] = {}
+    pairCache[newPretokenPair][newPreToken] = pairCache[oldPretokenPair].get(word, 0) # ow, e -> {(l, ow, e, r) -> 1} 
+    pairCache[oldPretokenPair][word] = pairCache[oldPretokenPair][word] - count
+    if pairCache[oldPretokenPair][word] <= 0:
+        del pairCache[oldPretokenPair][word] # remove the old pair cache. Ex. {w, e -> {(l, o, w, e, r) -> 1, (w, e, s, t) -> 1}} => {w, e -> {(w, e, s, t) -> 1}}
+    if not pairCache[oldPretokenPair]: 
+        del pairCache[oldPretokenPair]
+    return pairCache
 
 """Given the path to an input corpus, run train a BPE tokenizer and
     output its vocabulary and merges.
@@ -276,19 +328,17 @@ def run_train_bpe(
     end_time1 = time.perf_counter()
     elapsed_time1 = end_time1 - start_time
     logger.info(f"Init pretokens: Vocab size: {vocab_size}, Elapsed time: {elapsed_time1:.4f} seconds")
-    logger.debug(f"Init pretokens: {pretokens }")
+    logger.info(f"Init pretokens: {len(pretokens)}")
     # logger.debug(f"init pretoken: {pretokens}")
     vocab = {}
     merges = []
     pairCache = {}
     for iteration in tqdm(range(vocab_size), desc="Training vocab"): 
-        logger.debug(f"iteration {iteration}")
+        logger.info(f"iteration {iteration}")
         maxPair, pairCache = getMaxPairCount(pretokens, iteration == 0, pairCache)
         logger.info(f"iter {iteration}: max pair: {maxPair}")
         pretokens = mergePretokenCache(pretokens, maxPair, pairCache)
-        logger.debug(f"iter {iteration}: pretokens: {pretokens}")
-        logger.debug(pairCache)
-        logger.debug(pretokens)
+        logger.info(f"iter {iteration}: pretokens size: {len(pretokens)}, pair cache size: {len(pairCache)}")
         if (maxPair[1] > 0):
             vocab[len(vocab)] = maxPair[0]
             merges.append(maxPair[0])
@@ -298,6 +348,7 @@ def run_train_bpe(
     end_time2 = time.perf_counter()
     elapsed_time2 = end_time2 - start_time
     logger.info(f"Vocab size: {vocab_size}, Elapsed time: {elapsed_time2:.4f} seconds")
+    # logger.info(f"Vocab size: {vocab_size}, merges: {merges}")
     with open(f"{input_path}-{vocab_size}.txt", "w") as file:
         for merge in merges: 
             file.write(f"{merge[0]}-{merge[1]}\n")
@@ -306,5 +357,5 @@ def run_train_bpe(
 ## Usage
 splitTextToken = "<|endoftext|>"
 specialTokens = []
-run_train_bpe("assignment1-basics/data/TinyStoriesV2-GPT4-valid.txt", 1000, specialTokens, splitTextToken, chunk_size_to_process=100*1024*1024)
+run_train_bpe("assignment1-basics/data/TinyStoriesV2-GPT4-train.txt", 10000, specialTokens, splitTextToken, chunk_size_to_process=100*1024*1024)
 # print(initPretoken("data/test.txt", splitTextToken, specialTokens))
