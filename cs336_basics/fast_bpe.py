@@ -1,3 +1,4 @@
+from datetime import datetime
 import os
 import math
 import time
@@ -349,7 +350,10 @@ def run_train_bpe(
     elapsed_time2 = end_time2 - start_time
     logger.info(f"Vocab size: {vocab_size}, Elapsed time: {elapsed_time2:.4f} seconds")
     # logger.info(f"Vocab size: {vocab_size}, merges: {merges}")
-    with open(f"{input_path}-{vocab_size}.txt", "w") as file:
+    now = datetime.now()
+    # Chuyển đổi thành chuỗi dạng yymmddhhmmss
+    string_format = now.strftime("%y%m%d%H%M%S")
+    with open(f"{input_path}-{vocab_size}-{string_format}-{elapsed_time2:.1f}.txt", "w") as file:
         for merge in merges: 
             file.write(f"{merge[0]}-{merge[1]}\n")
     return vocab, merges
@@ -357,5 +361,5 @@ def run_train_bpe(
 ## Usage
 splitTextToken = "<|endoftext|>"
 specialTokens = []
-run_train_bpe("assignment1-basics/data/TinyStoriesV2-GPT4-train.txt", 10000, specialTokens, splitTextToken, chunk_size_to_process=100*1024*1024)
+run_train_bpe("assignment1-basics/data/TinyStoriesV2-GPT4-valid.txt", 1000, specialTokens, splitTextToken, chunk_size_to_process=100*1024*1024)
 # print(initPretoken("data/test.txt", splitTextToken, specialTokens))
