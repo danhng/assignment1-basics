@@ -1,5 +1,6 @@
 from datetime import datetime
 import multiprocessing
+from operator import itemgetter
 import os
 import math
 import time
@@ -7,6 +8,7 @@ from typing import BinaryIO
 import regex as re
 import logging
 from tqdm import tqdm
+from sortedcontainers import SortedList
 
 # 1. Create a custom logger
 logger = logging.getLogger('fast_bpe')
@@ -223,6 +225,45 @@ def getMaxPairCountCache(pretokens, initPairCache = False, pairCache = {}):
                 maxPair = targetPair
     return tuple([maxPair, maxPairCount]), pairCache
 
+def getMaxPairCountCache2(pretokens, initPairCache = False, pairCache = {}, pairCacheSort = SortedList()): 
+    pairs = {}
+    maxPairCount = 0
+    maxPair = tuple()
+    
+    # if not init pair cache, do the slow way
+    if initPairCache: 
+        for word, wordCount in pretokens.items(): 
+            # zip to create pairs. 
+            for i in range(len(word) - 1): 
+                targetPair = tuple([''.join(word[i]), ''.join(word[i+1])]) # todo flatten tuple bytes
+                # todo: iterate through all pair cache instead of words.
+                pairs[targetPair] = pairs.get(targetPair, 0) + wordCount
+                # compare max and lexicographic
+                if (pairs[targetPair] > maxPairCount) or ((pairs[targetPair] == maxPairCount) and (targetPair > maxPair)):
+                    maxPairCount = pairs[targetPair]
+                    maxPair = targetPair
+                # init pair cache
+                if targetPair not in pairCache: 
+                    pairCache[targetPair] = {}
+                if word not in pairCache[targetPair]: 
+                    pairCache[targetPair][word] = [0, 0]
+                pairCache[targetPair][word][0] = wordCount # append count to handle to multi-pair in a word
+                pairCache[targetPair][word][1] = pairCache[targetPair][word][1] + 1 # append count to handle to multi-pair in a word
+        # init pairCacheSort
+        for targetPair, pairSpec in pairCache.items(): 
+            pairCount = sum(pairSpecMap[0] * pairSpecMap[1] for pairSpecMap in pairSpec.values())
+            pairCacheSort.add(tuple([targetPair, pairCount]))
+    else: 
+        for i in range(len(pairCacheSort)):
+            candidateMaxPair = pairCacheSort[-1] # pop the candidate max pair from pairCacheSort
+            if candidateMaxPair[0] in pairCache and candidateMaxPair[1] == sum(pairSpecMap[0] * pairSpecMap[1] for pairSpecMap in pairCache.get(candidateMaxPair[0]).values()): 
+                maxPair, maxPairCount = candidateMaxPair
+                break # stop if found a valid cache sort pair
+            else:
+                logger.debug(f"stale cache: {candidateMaxPair} -> remove")
+                pairCacheSort.pop()
+    return tuple([maxPair, maxPairCount]), pairCache, pairCacheSort
+
 """
     return new pre token after maxpair is merged
 """
@@ -248,11 +289,13 @@ def mergePretoken(pretokens, maxPair):
 """
     return new pre token after maxpair is merged
 """
-def mergePretokenCache(pretokens, maxPair, pairCache):
+def mergePretokenCache(pretokens, maxPair, pairCache, pairSortedCache: SortedList):
     # loop through all pretoken
     # replace pair of bytes with maxPair
     maxPairBytes = maxPair[0]
     wordsToProcess = pairCache[maxPairBytes]
+    
+    newPairsToSort = set()
     for word in wordsToProcess: 
         # create the cache for max pair (maxword -> {word: count})
         newPretoken = []
@@ -291,6 +334,7 @@ def mergePretokenCache(pretokens, maxPair, pairCache):
                             pairCache[newOverlappingPairBehind][newPretoken] = [pairCache[oldAdjacentPair][word][0], 0]
                         pairCache[newOverlappingPairBehind][newPretoken][1] = pairCache[newOverlappingPairBehind][newPretoken][1] + 1 # only append 1 to occurences.
                         newIndicesProcessed.add(checkNewIndex)
+                        newPairsToSort.add(newOverlappingPairBehind)
                     else: 
                         logger.debug(f"oops: found processed overlapp pair behind at new index {checkNewIndex}, old pair {oldAdjacentPair}, new pair {newOverlappingPairBehind}")
 
@@ -303,6 +347,7 @@ def mergePretokenCache(pretokens, maxPair, pairCache):
                             logger.debug(f"old adjacent pair {oldAdjacentPair} has no relevant word left, removing from pair cache")
                             del pairCache[oldAdjacentPair]
                         currentWordIndicesProcessed.add(checkCurrentIndex)
+                        newPairsToSort.add(oldAdjacentPair)
                     else: 
                         logger.debug(f"oops: found processed overlapp pair behind at old index {checkCurrentIndex}, old pair {oldAdjacentPair}, new pair {newOverlappingPairBehind}")
 
@@ -320,6 +365,7 @@ def mergePretokenCache(pretokens, maxPair, pairCache):
                             pairCache[newOverlappingPairAhead][newPretoken] = [pairCache[oldAdjacentPair][word][0], 0]
                         pairCache[newOverlappingPairAhead][newPretoken][1] = pairCache[newOverlappingPairAhead][newPretoken][1] + 1 # only append 1 to occurences.
                         newIndicesProcessed.add(checkNewIndex)
+                        newPairsToSort.add(newOverlappingPairAhead)
                     else: 
                         logger.debug(f"oops: found processed overlapp pair ahead at new index {checkNewIndex}, old pair {oldAdjacentPair}, new pair {newOverlappingPairAhead}")
                     if (checkCurrentIndex not in currentWordIndicesProcessed): 
@@ -331,6 +377,7 @@ def mergePretokenCache(pretokens, maxPair, pairCache):
                             logger.debug(f"old adjacent pair {oldAdjacentPair} has no relevant word left, removing from pair cache")
                             del pairCache[oldAdjacentPair]
                         currentWordIndicesProcessed.add(checkCurrentIndex)
+                        newPairsToSort.add(oldAdjacentPair)
                     else: 
                         logger.debug(f"oops: found processed overlapp pair behind at old index {checkCurrentIndex}, old pair {oldAdjacentPair}, new pair {newOverlappingPairAhead}")    
                 logger.debug(f"found max pair in new pretoken {newPretoken} at index {currentWordIndex}")
@@ -338,6 +385,7 @@ def mergePretokenCache(pretokens, maxPair, pairCache):
                 newIndex = newIndex+1 # keep track of new index
                 continue
             # only skip look ahead, look behind is never checked 
+            # the count of this pair (non adjacent pair) is unchanged -> no need to resort this pair (count just moved from old word to new words)
             if (currentWordIndex >= len(word) - 2 or (currentWordIndex < len(word) - 2 and maxPair[0] != tuple([''.join(word[currentWordIndex+1]), ''.join(word[currentWordIndex+2])]))):
             # if (currentWordIndex >= len(word) - 2 or (currentWordIndex < len(word) - 2 and maxPair[0] != tuple([''.join(word[currentWordIndex+1]), ''.join(word[currentWordIndex+2])]))) and (currentWordIndex <= 1 or (currentWordIndex > 0 and maxPair[0] != tuple([''.join(word[currentWordIndex-1]), ''.join(word[currentWordIndex])]))):
                 logger.debug(f"found normal non overlapping pair at cur index {currentWordIndex}: {checkingPretokenPair}")
@@ -356,6 +404,14 @@ def mergePretokenCache(pretokens, maxPair, pairCache):
             newIndex = newIndex+1 # keep track of new index of new Pre token
         pretokens[newPretoken] = pretokens[word]         # add new preToken to pretokenMap
         del pretokens[word] # remove word h, o, w
+    
+    pairSortedCache.pop() # remove the current max
+    # add pair counts to sorted
+    for pairToSort in newPairsToSort: 
+        if (pairToSort in pairCache): 
+            pairCount = sum(pairSpecMap[0] * pairSpecMap[1] for pairSpecMap in pairCache.get(pairToSort).values())
+            pairSortedCache.add(tuple([pairToSort, pairCount]))
+    
     del pairCache[maxPair[0]] # remove the old pair (as they are merged to one token), o, w -> {}
     # remove maxpair as pair from the cache after merge
     return pretokens
@@ -422,16 +478,17 @@ def run_train_bpe(
     logger.debug(f"Init vocab: {vocab}")
     merges = []
     pairCache = {}
+    pairCacheSort = SortedList([], key=itemgetter(1, 0)) # compare count first, then value for ties
     end_time2 = time.perf_counter()
     for iteration in tqdm(range(vocab_size-len(vocab)), desc="Training vocab"): 
         logger.info(f"iteration {iteration}")
         if get_max_by_cache: 
-            maxPair, pairCache = getMaxPairCountCache(pretokens, iteration == 0, pairCache)
+            maxPair, pairCache, pairCacheSort = getMaxPairCountCache2(pretokens, iteration == 0, pairCache, pairCacheSort)
         else: 
             maxPair, pairCache = getMaxPairCount(pretokens, iteration == 0, pairCache)
         if (maxPair[1] > 0):
             logger.info(f"iter {iteration}: max pair: {maxPair}")
-            pretokens = mergePretokenCache(pretokens, maxPair, pairCache)
+            pretokens = mergePretokenCache(pretokens, maxPair, pairCache, pairCacheSort)
             logger.info(f"iter {iteration}: pretokens size: {len(pretokens)}, pair cache size: {len(pairCache)}")
             vocab[len(vocab)] = maxPair[0]
             merges.append(maxPair[0])
@@ -458,8 +515,9 @@ def run_train_bpe(
 ## Usage
 splitTextToken = "<|endoftext|>"
 specialTokens = []
-# dataset = "TinyStoriesV2-GPT4-valid.txt"
+# dataset = "TinyStoriesV2-GPT4-train.txt"
 dataset = "owt_train.txt"
+# dataset = "test.txt"
 run_train_bpe(f"assignment1-basics/data/{dataset}", 
               output_path=f"assignment1-basics/data/output/{dataset}", 
               vocab_size=32000, special_tokens=specialTokens, split_text_token=splitTextToken, 

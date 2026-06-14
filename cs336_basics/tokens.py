@@ -31,6 +31,39 @@ Answer: 110xxxxx - 0xxxxxxx (Because 2 byte sequence always has to start with 11
 """
 
 
+from operator import itemgetter
+
+import numpy as np
+import timeit
+
+from sortedcontainers import SortedList
+
+# # Setup data
+# data_list = list(np.random.rand(10000000))
+# data_array = np.array(data_list)
+
+# # 1. Native Python For Loop
+# def for_loop_max(data):
+#     maximum = data[0]
+#     for num in data:
+#         if num > maximum:
+#             maximum = num
+#     return maximum
+
+# # Benchmarks
+# time_loop = timeit.timeit(lambda: for_loop_max(data_list), number=10)
+# time_builtin = timeit.timeit(lambda: max(data_list), number=10)
+# time_numpy = timeit.timeit(lambda: np.max(data_array), number=10)
+
+# print(f"For Loop:     {time_loop:.4f} seconds")
+# print(f"Built-in max: {time_builtin:.4f} seconds")
+# print(f"NumPy max:    {time_numpy:.4f} seconds")
+
+pairCacheSort = SortedList([tuple(["d", 2]), tuple(["b", 3]), tuple(["c", 2])], key=itemgetter(1, 0)) # compare count first, then value for ties
+print(pairCacheSort)
+print(pairCacheSort.pop())
+print(pairCacheSort)
+
 
 
 
