@@ -12,7 +12,7 @@ from sortedcontainers import SortedList
 
 # 1. Create a custom logger
 logger = logging.getLogger('fast_bpe')
-logger.setLevel(logging.WARNING)
+logger.setLevel(logging.INFO)
 
 # 2. Create handlers
 c_handler = logging.StreamHandler()  # For console
@@ -416,6 +416,21 @@ def mergePretokenCache(pretokens, maxPair, pairCache, pairSortedCache: SortedLis
     # remove maxpair as pair from the cache after merge
     return pretokens
 
+def initVocab(delimTokens): 
+    vocab = {}
+    for k in range(len(delimTokens)): 
+        vocab[delimTokens[k]] = k
+    for i in range(33,127):
+        b = chr(i)
+        vocab[b] = len(vocab)
+    for i in range(161,173):
+        b = chr(i)
+        vocab[b] = len(vocab)
+    for i in range(174,324):
+        b = chr(i)
+        vocab[b] = len(vocab)
+    return vocab
+
 """Given the path to an input corpus, run train a BPE tokenizer and
     output its vocabulary and merges.
 
@@ -468,14 +483,8 @@ def run_train_bpe(
     logger.info(f"Init pretokens: Vocab size: {vocab_size}, Elapsed time: {elapsed_time1:.4f} seconds")
     logger.info(f"Init pretokens: {len(pretokens)}")
     # logger.debug(f"init pretoken: {pretokens}")
-    vocab = {}
     delimTokens = special_tokens + [split_text_token]
-    for k in range(len(delimTokens)): 
-        vocab[delimTokens[k]] = k
-    for i in range (256): 
-        b = chr(i)
-        vocab[b] = len(vocab)
-    logger.debug(f"Init vocab: {vocab}")
+    vocab = initVocab(delimTokens=delimTokens)
     merges = []
     pairCache = {}
     pairCacheSort = SortedList([], key=itemgetter(1, 0)) # compare count first, then value for ties
@@ -506,10 +515,12 @@ def run_train_bpe(
     logger.warning(f"Total Elapsed time: {elapsed_time3:.1f} seconds")
     now = datetime.now()
     string_format = now.strftime("%y%m%d%H%M%S")
+    logger.info(f"vocab: {vocab}")
+    
     if output_path: 
         with open(f"{output_path}-{get_init_multi_process*process_count}-{vocab_size}-{string_format}-{elapsed_time3:.1f}.txt", "w") as file:
-            for merge in merges: 
-                file.write(f"{merge[0]}-{merge[1]}\n")
+            for key,val in vocab.items(): 
+                file.write(f"{val}:{key}\n")
     return vocab, merges
 
 ## Usage
@@ -517,10 +528,14 @@ if __name__ == '__main__':
     splitTextToken = "<|endoftext|>"
     specialTokens = []
     # dataset = "TinyStoriesV2-GPT4-train.txt"
-    dataset = "owt_train.txt"
-    # dataset = "test.txt"
+    # dataset = "owt_train.txt"
+    dataset = "corpus.en"
     run_train_bpe(f"assignment1-basics/data/{dataset}", 
                 output_path=f"assignment1-basics/data/output/{dataset}", 
-                vocab_size=32000, special_tokens=specialTokens, split_text_token=splitTextToken, 
+                vocab_size=500, special_tokens=specialTokens, split_text_token=splitTextToken, 
                 chunk_size_to_process=100*1024*1024, 
                 get_max_by_cache=True, get_init_multi_process=True, process_count = 4)
+    
+    
+    # print (initVocab([splitTextToken]))
+    # print (ord('j'))
