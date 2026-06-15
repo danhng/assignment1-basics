@@ -513,13 +513,14 @@ def run_train_bpe(
     return vocab, merges
 
 ## Usage
-splitTextToken = "<|endoftext|>"
-specialTokens = []
-# dataset = "TinyStoriesV2-GPT4-train.txt"
-dataset = "owt_train.txt"
-# dataset = "test.txt"
-run_train_bpe(f"assignment1-basics/data/{dataset}", 
-              output_path=f"assignment1-basics/data/output/{dataset}", 
-              vocab_size=32000, special_tokens=specialTokens, split_text_token=splitTextToken, 
-              chunk_size_to_process=100*1024*1024, 
-              get_max_by_cache=True, get_init_multi_process=True, process_count = 8)
+if __name__ == '__main__':
+    splitTextToken = "<|endoftext|>"
+    specialTokens = []
+    # dataset = "TinyStoriesV2-GPT4-train.txt"
+    dataset = "owt_train.txt"
+    # dataset = "test.txt"
+    run_train_bpe(f"assignment1-basics/data/{dataset}", 
+                output_path=f"assignment1-basics/data/output/{dataset}", 
+                vocab_size=32000, special_tokens=specialTokens, split_text_token=splitTextToken, 
+                chunk_size_to_process=100*1024*1024, 
+                get_max_by_cache=True, get_init_multi_process=True, process_count = 4)
