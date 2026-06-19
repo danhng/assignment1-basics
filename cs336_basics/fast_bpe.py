@@ -101,8 +101,8 @@ def initPretoken(inputPath: str | os.PathLike, splitTokens: str, specialTokens: 
                 matches = re.finditer(regexPretoken, chunk)
                 for match in matches: 
                     word = match.group()
-                    word = word.replace(chr(0x20), chr(288))
-                    word = word.replace(chr(0x0A), chr(266))
+                    # word = word.replace(chr(0x20), chr(288))
+                    # word = word.replace(chr(0x0A), chr(266))
                     chars = tuple(word) 
                     map[chars] = map.get(chars, 0) + 1
         return map
@@ -125,7 +125,7 @@ def processChunk(task):
             matches = re.finditer(regexPretoken, chunk)
             for match in matches: 
                 word = match.group()
-                word = word.replace(chr(0x20), chr(288)).replace(chr(0x0A), chr(266))
+                # word = word.replace(chr(0x20), chr(288)).replace(chr(0x0A), chr(266))
                 chars = tuple(word) 
                 map[chars] = map.get(chars, 0) + 1
     return map
@@ -405,12 +405,13 @@ def mergePretokenCache(pretokens, maxPair, pairCache, pairSortedCache: SortedLis
         pretokens[newPretoken] = pretokens[word]         # add new preToken to pretokenMap
         del pretokens[word] # remove word h, o, w
     
-    pairSortedCache.pop() # remove the current max
-    # add pair counts to sorted
-    for pairToSort in newPairsToSort: 
-        if (pairToSort in pairCache): 
-            pairCount = sum(pairSpecMap[0] * pairSpecMap[1] for pairSpecMap in pairCache.get(pairToSort).values())
-            pairSortedCache.add(tuple([pairToSort, pairCount]))
+    if len(pairSortedCache) > 0: 
+        pairSortedCache.pop() # remove the current max
+        # add pair counts to sorted
+        for pairToSort in newPairsToSort: 
+            if (pairToSort in pairCache): 
+                pairCount = sum(pairSpecMap[0] * pairSpecMap[1] for pairSpecMap in pairCache.get(pairToSort).values())
+                pairSortedCache.add(tuple([pairToSort, pairCount]))
     
     del pairCache[maxPair[0]] # remove the old pair (as they are merged to one token), o, w -> {}
     # remove maxpair as pair from the cache after merge
@@ -490,6 +491,8 @@ def run_train_bpe(
     pairCacheSort = SortedList([], key=itemgetter(1, 0)) # compare count first, then value for ties
     end_time2 = time.perf_counter()
     for iteration in tqdm(range(vocab_size-len(vocab)), desc="Training vocab"): 
+        if iteration == 99: 
+            logger.debug("Go here to check")
         logger.info(f"iteration {iteration}")
         if get_max_by_cache: 
             maxPair, pairCache, pairCacheSort = getMaxPairCountCache2(pretokens, iteration == 0, pairCache, pairCacheSort)
@@ -499,7 +502,10 @@ def run_train_bpe(
             logger.info(f"iter {iteration}: max pair: {maxPair}")
             pretokens = mergePretokenCache(pretokens, maxPair, pairCache, pairCacheSort)
             logger.info(f"iter {iteration}: pretokens size: {len(pretokens)}, pair cache size: {len(pairCache)}")
-            vocab[len(vocab)] = maxPair[0]
+            visual = ''.join(maxPair[0]).replace(chr(0x20), chr(288)).replace(chr(0x0A), chr(266))
+            # word = word.replace(chr(0x20), chr(288))
+                    # word = word.replace(chr(0x0A), chr(266))
+            vocab[visual] = len(vocab)
             merges.append(maxPair[0])
             logger.debug(f"merges: {merges}")
         else: 
@@ -518,9 +524,9 @@ def run_train_bpe(
     logger.info(f"vocab: {vocab}")
     
     if output_path: 
-        with open(f"{output_path}-{get_init_multi_process*process_count}-{vocab_size}-{string_format}-{elapsed_time3:.1f}.txt", "w") as file:
+        with open(f"{output_path}-C{get_max_by_cache}-{get_init_multi_process*process_count}-{vocab_size}-{string_format}-{elapsed_time3:.1f}.txt", "w") as file:
             for key,val in vocab.items(): 
-                file.write(f"{val}:{key}\n")
+                file.write(f"\"{''.join(key)}\":{val}\n")
     return vocab, merges
 
 ## Usage
