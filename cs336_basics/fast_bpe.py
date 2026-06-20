@@ -1,14 +1,14 @@
 from datetime import datetime
+import multiprocessing
+from operator import itemgetter
 import os
 import math
 import time
 from typing import BinaryIO
 import regex as re
-
-import io
 import logging
-
 from tqdm import tqdm
+from sortedcontainers import SortedList
 
 # 1. Create a custom logger
 logger = logging.getLogger('fast_bpe')
@@ -92,7 +92,7 @@ def initPretoken(inputPath: str | os.PathLike, splitTokens: str, specialTokens: 
         # by sending each start/end pair to a set of processes.
         for start, end in tqdm(zip(boundaries[:-1], boundaries[1:]), desc="Init Pretoken"):
             f.seek(start)
-            chunk = f.read(end - start).decode("utf-8", errors="ignore").strip()
+            chunk = f.read(end - start).decode("utf-8", errors="ignore")
             splitTokenRegex = r"|"+"|".join(re.escape(escapedToken) for escapedToken in(delimTokens))
             chunk = re.sub(splitTokenRegex, "", chunk)
             if chunk:
@@ -101,8 +101,61 @@ def initPretoken(inputPath: str | os.PathLike, splitTokens: str, specialTokens: 
                 matches = re.finditer(regexPretoken, chunk)
                 for match in matches: 
                     word = match.group()
+                    # word = word.replace(chr(0x20), chr(288))
+                    # word = word.replace(chr(0x0A), chr(266))
                     chars = tuple(word) 
                     map[chars] = map.get(chars, 0) + 1
+        return map
+
+"""
+    Returns: dict(tuple[str] -> count): The pretoken -> count
+"""
+def processChunk(task): 
+    start, end, inputPath, splitTokens, specialTokens = task
+    delimTokens = specialTokens + [splitTokens]
+    map = {}
+    with open(inputPath, "rb") as f:
+        f.seek(start)
+        chunk = f.read(end - start).decode("utf-8", errors="ignore")        
+        splitTokenRegex = r"|"+"|".join(re.escape(escapedToken) for escapedToken in(delimTokens))
+        chunk = re.sub(splitTokenRegex, "", chunk)
+        if chunk:
+            # remove special tokens
+            regexPretoken = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+            matches = re.finditer(regexPretoken, chunk)
+            for match in matches: 
+                word = match.group()
+                # word = word.replace(chr(0x20), chr(288)).replace(chr(0x0A), chr(266))
+                chars = tuple(word) 
+                map[chars] = map.get(chars, 0) + 1
+    return map
+    
+
+def initPretokenMultiProcess(inputPath: str | os.PathLike, splitTokens: str, specialTokens: list[str], chunkSizeToProcess = 1024*1024, processCount = 1): 
+    if __name__ == "__main__":
+        map = {}
+        """
+        iterate through chunks (splitted by tokens)
+        """
+        with open(inputPath, "rb") as f:
+            boundaries = find_chunk_boundaries(f, chunkSizeToProcess, bytes(splitTokens, "utf-8"))
+            # The following is a serial implementation, but you can parallelize this
+            # by sending each start/end pair to a set of processes.
+            
+            #create task
+            tasks = []
+            for start, end in zip(boundaries[:-1], boundaries[1:]):
+                tasks.append((start, end, inputPath, splitTextToken, specialTokens))
+            
+            with multiprocessing.Pool(processes=processCount) as pool:
+            # pool.map distributes the list items across worker processes
+                iterMap = tqdm(pool.imap_unordered(processChunk, tasks), total=len(boundaries)-1, desc="Init Pretoken")
+                # submaps = pool.map(processChunk, tasks)
+                print(f"Total workers in pool: {processCount}")  # Outputs: 4
+                for submap in iterMap: 
+                    for word, count in submap.items(): 
+                        map[word] = map.get(word, 0) + count
+            logger.debug(f"Init pre token size: {len(map)}")
         return map
 
 """
@@ -135,6 +188,83 @@ def getMaxPairCount(pretokens, initPairCache = False, pairCache = {}):
     return tuple([maxPair, maxPairCount]), pairCache
 
 """
+Give the pretokens, count the adjacent pairs count 
+return map tuple[str, str] -> count
+{('u',): 1, (' ', 'd', 'o', 'n'): 1, ("'", 't'): 1 ...
+pair cache (map of map): {(o, w) -> {(l, (o, w)) -> [<number of words>, <number of occurences>]}, ...}}
+"""
+def getMaxPairCountCache(pretokens, initPairCache = False, pairCache = {}): 
+    pairs = {}
+    maxPairCount = 0
+    maxPair = tuple()
+    
+    # if not init pair cache, do the slow way
+    if initPairCache: 
+        for word, wordCount in pretokens.items(): 
+            # zip to create pairs. 
+            for i in range(len(word) - 1): 
+                targetPair = tuple([''.join(word[i]), ''.join(word[i+1])]) # todo flatten tuple bytes
+                # todo: iterate through all pair cache instead of words.
+                pairs[targetPair] = pairs.get(targetPair, 0) + wordCount
+                # compare max and lexicographic
+                if (pairs[targetPair] > maxPairCount) or ((pairs[targetPair] == maxPairCount) and (targetPair > maxPair)):
+                    maxPairCount = pairs[targetPair]
+                    maxPair = targetPair
+                # init pair cache
+                if targetPair not in pairCache: 
+                    pairCache[targetPair] = {}
+                if word not in pairCache[targetPair]: 
+                    pairCache[targetPair][word] = [0, 0]
+                pairCache[targetPair][word][0] = wordCount # append count to handle to multi-pair in a word
+                pairCache[targetPair][word][1] = pairCache[targetPair][word][1] + 1 # append count to handle to multi-pair in a word
+    else: 
+        for targetPair, pairSpec in pairCache.items(): 
+            pairCount = sum(pairSpecMap[0] * pairSpecMap[1] for pairSpecMap in pairSpec.values())
+            if (pairCount > maxPairCount) or ((pairCount == maxPairCount) and (targetPair > maxPair)):
+                maxPairCount = pairCount
+                maxPair = targetPair
+    return tuple([maxPair, maxPairCount]), pairCache
+
+def getMaxPairCountCache2(pretokens, initPairCache = False, pairCache = {}, pairCacheSort = SortedList()): 
+    pairs = {}
+    maxPairCount = 0
+    maxPair = tuple()
+    
+    # if not init pair cache, do the slow way
+    if initPairCache: 
+        for word, wordCount in pretokens.items(): 
+            # zip to create pairs. 
+            for i in range(len(word) - 1): 
+                targetPair = tuple([''.join(word[i]), ''.join(word[i+1])]) # todo flatten tuple bytes
+                # todo: iterate through all pair cache instead of words.
+                pairs[targetPair] = pairs.get(targetPair, 0) + wordCount
+                # compare max and lexicographic
+                if (pairs[targetPair] > maxPairCount) or ((pairs[targetPair] == maxPairCount) and (targetPair > maxPair)):
+                    maxPairCount = pairs[targetPair]
+                    maxPair = targetPair
+                # init pair cache
+                if targetPair not in pairCache: 
+                    pairCache[targetPair] = {}
+                if word not in pairCache[targetPair]: 
+                    pairCache[targetPair][word] = [0, 0]
+                pairCache[targetPair][word][0] = wordCount # append count to handle to multi-pair in a word
+                pairCache[targetPair][word][1] = pairCache[targetPair][word][1] + 1 # append count to handle to multi-pair in a word
+        # init pairCacheSort
+        for targetPair, pairSpec in pairCache.items(): 
+            pairCount = sum(pairSpecMap[0] * pairSpecMap[1] for pairSpecMap in pairSpec.values())
+            pairCacheSort.add(tuple([targetPair, pairCount]))
+    else: 
+        for i in range(len(pairCacheSort)):
+            candidateMaxPair = pairCacheSort[-1] # pop the candidate max pair from pairCacheSort
+            if candidateMaxPair[0] in pairCache and candidateMaxPair[1] == sum(pairSpecMap[0] * pairSpecMap[1] for pairSpecMap in pairCache.get(candidateMaxPair[0]).values()): 
+                maxPair, maxPairCount = candidateMaxPair
+                break # stop if found a valid cache sort pair
+            else:
+                logger.debug(f"stale cache: {candidateMaxPair} -> remove")
+                pairCacheSort.pop()
+    return tuple([maxPair, maxPairCount]), pairCache, pairCacheSort
+
+"""
     return new pre token after maxpair is merged
 """
 def mergePretoken(pretokens, maxPair):
@@ -156,15 +286,16 @@ def mergePretoken(pretokens, maxPair):
         newPreTokens[tuple(newPretoken)] = count
     return newPreTokens
 
-
 """
     return new pre token after maxpair is merged
 """
-def mergePretokenCache(pretokens, maxPair, pairCache):
+def mergePretokenCache(pretokens, maxPair, pairCache, pairSortedCache: SortedList):
     # loop through all pretoken
     # replace pair of bytes with maxPair
     maxPairBytes = maxPair[0]
     wordsToProcess = pairCache[maxPairBytes]
+    
+    newPairsToSort = set()
     for word in wordsToProcess: 
         # create the cache for max pair (maxword -> {word: count})
         newPretoken = []
@@ -203,6 +334,7 @@ def mergePretokenCache(pretokens, maxPair, pairCache):
                             pairCache[newOverlappingPairBehind][newPretoken] = [pairCache[oldAdjacentPair][word][0], 0]
                         pairCache[newOverlappingPairBehind][newPretoken][1] = pairCache[newOverlappingPairBehind][newPretoken][1] + 1 # only append 1 to occurences.
                         newIndicesProcessed.add(checkNewIndex)
+                        newPairsToSort.add(newOverlappingPairBehind)
                     else: 
                         logger.debug(f"oops: found processed overlapp pair behind at new index {checkNewIndex}, old pair {oldAdjacentPair}, new pair {newOverlappingPairBehind}")
 
@@ -215,6 +347,7 @@ def mergePretokenCache(pretokens, maxPair, pairCache):
                             logger.debug(f"old adjacent pair {oldAdjacentPair} has no relevant word left, removing from pair cache")
                             del pairCache[oldAdjacentPair]
                         currentWordIndicesProcessed.add(checkCurrentIndex)
+                        newPairsToSort.add(oldAdjacentPair)
                     else: 
                         logger.debug(f"oops: found processed overlapp pair behind at old index {checkCurrentIndex}, old pair {oldAdjacentPair}, new pair {newOverlappingPairBehind}")
 
@@ -232,6 +365,7 @@ def mergePretokenCache(pretokens, maxPair, pairCache):
                             pairCache[newOverlappingPairAhead][newPretoken] = [pairCache[oldAdjacentPair][word][0], 0]
                         pairCache[newOverlappingPairAhead][newPretoken][1] = pairCache[newOverlappingPairAhead][newPretoken][1] + 1 # only append 1 to occurences.
                         newIndicesProcessed.add(checkNewIndex)
+                        newPairsToSort.add(newOverlappingPairAhead)
                     else: 
                         logger.debug(f"oops: found processed overlapp pair ahead at new index {checkNewIndex}, old pair {oldAdjacentPair}, new pair {newOverlappingPairAhead}")
                     if (checkCurrentIndex not in currentWordIndicesProcessed): 
@@ -243,6 +377,7 @@ def mergePretokenCache(pretokens, maxPair, pairCache):
                             logger.debug(f"old adjacent pair {oldAdjacentPair} has no relevant word left, removing from pair cache")
                             del pairCache[oldAdjacentPair]
                         currentWordIndicesProcessed.add(checkCurrentIndex)
+                        newPairsToSort.add(oldAdjacentPair)
                     else: 
                         logger.debug(f"oops: found processed overlapp pair behind at old index {checkCurrentIndex}, old pair {oldAdjacentPair}, new pair {newOverlappingPairAhead}")    
                 logger.debug(f"found max pair in new pretoken {newPretoken} at index {currentWordIndex}")
@@ -250,6 +385,7 @@ def mergePretokenCache(pretokens, maxPair, pairCache):
                 newIndex = newIndex+1 # keep track of new index
                 continue
             # only skip look ahead, look behind is never checked 
+            # the count of this pair (non adjacent pair) is unchanged -> no need to resort this pair (count just moved from old word to new words)
             if (currentWordIndex >= len(word) - 2 or (currentWordIndex < len(word) - 2 and maxPair[0] != tuple([''.join(word[currentWordIndex+1]), ''.join(word[currentWordIndex+2])]))):
             # if (currentWordIndex >= len(word) - 2 or (currentWordIndex < len(word) - 2 and maxPair[0] != tuple([''.join(word[currentWordIndex+1]), ''.join(word[currentWordIndex+2])]))) and (currentWordIndex <= 1 or (currentWordIndex > 0 and maxPair[0] != tuple([''.join(word[currentWordIndex-1]), ''.join(word[currentWordIndex])]))):
                 logger.debug(f"found normal non overlapping pair at cur index {currentWordIndex}: {checkingPretokenPair}")
@@ -268,23 +404,33 @@ def mergePretokenCache(pretokens, maxPair, pairCache):
             newIndex = newIndex+1 # keep track of new index of new Pre token
         pretokens[newPretoken] = pretokens[word]         # add new preToken to pretokenMap
         del pretokens[word] # remove word h, o, w
+    
+    if len(pairSortedCache) > 0: 
+        pairSortedCache.pop() # remove the current max
+        # add pair counts to sorted
+        for pairToSort in newPairsToSort: 
+            if (pairToSort in pairCache): 
+                pairCount = sum(pairSpecMap[0] * pairSpecMap[1] for pairSpecMap in pairCache.get(pairToSort).values())
+                pairSortedCache.add(tuple([pairToSort, pairCount]))
+    
     del pairCache[maxPair[0]] # remove the old pair (as they are merged to one token), o, w -> {}
     # remove maxpair as pair from the cache after merge
     return pretokens
 
-"""
-Transfer count to new pair
-"""
-def processPairCache(pairCache, newPretokenPair, oldPretokenPair, newPreToken, word, count): 
-    if newPretokenPair not in pairCache: 
-        pairCache[newPretokenPair] = {}
-    pairCache[newPretokenPair][newPreToken] = pairCache[oldPretokenPair].get(word, 0) # ow, e -> {(l, ow, e, r) -> 1} 
-    pairCache[oldPretokenPair][word] = pairCache[oldPretokenPair][word] - count
-    if pairCache[oldPretokenPair][word] <= 0:
-        del pairCache[oldPretokenPair][word] # remove the old pair cache. Ex. {w, e -> {(l, o, w, e, r) -> 1, (w, e, s, t) -> 1}} => {w, e -> {(w, e, s, t) -> 1}}
-    if not pairCache[oldPretokenPair]: 
-        del pairCache[oldPretokenPair]
-    return pairCache
+def initVocab(delimTokens): 
+    vocab = {}
+    for k in range(len(delimTokens)): 
+        vocab[delimTokens[k]] = k
+    for i in range(33,127):
+        b = chr(i)
+        vocab[b] = len(vocab)
+    for i in range(161,173):
+        b = chr(i)
+        vocab[b] = len(vocab)
+    for i in range(174,324):
+        b = chr(i)
+        vocab[b] = len(vocab)
+    return vocab
 
 """Given the path to an input corpus, run train a BPE tokenizer and
     output its vocabulary and merges.
@@ -320,46 +466,82 @@ def run_train_bpe(
     input_path: str | os.PathLike,
     vocab_size: int,
     special_tokens: list[str],
+    output_path = "",
     split_text_token = "<|endoftext|>",
     chunk_size_to_process = 1024 * 2014,
+    get_max_by_cache = True,
+    get_init_multi_process = True,
+    process_count = 1,
     **kwargs,
 ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
     start_time = time.perf_counter()
-    pretokens = initPretoken(inputPath=input_path, splitTokens=split_text_token,specialTokens=special_tokens, chunkSizeToProcess=chunk_size_to_process)
+    if get_init_multi_process: 
+        pretokens = initPretokenMultiProcess(inputPath=input_path, splitTokens=split_text_token,specialTokens=special_tokens, chunkSizeToProcess=chunk_size_to_process, processCount=process_count)
+    else:
+        pretokens = initPretoken(inputPath=input_path, splitTokens=split_text_token,specialTokens=special_tokens, chunkSizeToProcess=chunk_size_to_process)
     end_time1 = time.perf_counter()
     elapsed_time1 = end_time1 - start_time
     logger.info(f"Init pretokens: Vocab size: {vocab_size}, Elapsed time: {elapsed_time1:.4f} seconds")
     logger.info(f"Init pretokens: {len(pretokens)}")
     # logger.debug(f"init pretoken: {pretokens}")
-    vocab = {}
+    delimTokens = special_tokens + [split_text_token]
+    vocab = initVocab(delimTokens=delimTokens)
     merges = []
     pairCache = {}
-    for iteration in tqdm(range(vocab_size), desc="Training vocab"): 
-        logger.info(f"iteration {iteration}")
-        maxPair, pairCache = getMaxPairCount(pretokens, iteration == 0, pairCache)
-        logger.info(f"iter {iteration}: max pair: {maxPair}")
-        pretokens = mergePretokenCache(pretokens, maxPair, pairCache)
-        logger.info(f"iter {iteration}: pretokens size: {len(pretokens)}, pair cache size: {len(pairCache)}")
-        if (maxPair[1] > 0):
-            vocab[len(vocab)] = maxPair[0]
-            merges.append(maxPair[0])
-    #add special token to vocab
-    for specialToken in special_tokens: 
-        vocab[len(vocab)] = specialToken
+    pairCacheSort = SortedList([], key=itemgetter(1, 0)) # compare count first, then value for ties
     end_time2 = time.perf_counter()
-    elapsed_time2 = end_time2 - start_time
-    logger.info(f"Vocab size: {vocab_size}, Elapsed time: {elapsed_time2:.4f} seconds")
-    # logger.info(f"Vocab size: {vocab_size}, merges: {merges}")
+    for iteration in tqdm(range(vocab_size-len(vocab)), desc="Training vocab"): 
+        if iteration == 99: 
+            logger.debug("Go here to check")
+        logger.info(f"iteration {iteration}")
+        if get_max_by_cache: 
+            maxPair, pairCache, pairCacheSort = getMaxPairCountCache2(pretokens, iteration == 0, pairCache, pairCacheSort)
+        else: 
+            maxPair, pairCache = getMaxPairCount(pretokens, iteration == 0, pairCache)
+        if (maxPair[1] > 0):
+            logger.info(f"iter {iteration}: max pair: {maxPair}")
+            pretokens = mergePretokenCache(pretokens, maxPair, pairCache, pairCacheSort)
+            logger.info(f"iter {iteration}: pretokens size: {len(pretokens)}, pair cache size: {len(pairCache)}")
+            visual = ''.join(maxPair[0]).replace(chr(0x20), chr(288)).replace(chr(0x0A), chr(266))
+            # word = word.replace(chr(0x20), chr(288))
+                    # word = word.replace(chr(0x0A), chr(266))
+            vocab[visual] = len(vocab)
+            merges.append(maxPair[0])
+            logger.debug(f"merges: {merges}")
+        else: 
+            logger.info(f"iteration {iteration}: max pair not found, stop!")
+            break;
+    #add special token to vocab
+ 
+    end_time3 = time.perf_counter()
+    elapsed_time2 = end_time3 - end_time2
+    elapsed_time3 = end_time3 - start_time
+    logger.warning(f"Vocab size: {vocab_size}, Init pretoken time: {elapsed_time1:.1f} seconds")
+    logger.warning(f"Merge Elapsed time: {elapsed_time2:.1f} seconds")
+    logger.warning(f"Total Elapsed time: {elapsed_time3:.1f} seconds")
     now = datetime.now()
-    # Chuyển đổi thành chuỗi dạng yymmddhhmmss
     string_format = now.strftime("%y%m%d%H%M%S")
-    with open(f"{input_path}-{vocab_size}-{string_format}-{elapsed_time2:.1f}.txt", "w") as file:
-        for merge in merges: 
-            file.write(f"{merge[0]}-{merge[1]}\n")
+    logger.info(f"vocab: {vocab}")
+    
+    if output_path: 
+        with open(f"{output_path}-C{get_max_by_cache}-{get_init_multi_process*process_count}-{vocab_size}-{string_format}-{elapsed_time3:.1f}.txt", "w") as file:
+            for key,val in vocab.items(): 
+                file.write(f"\"{''.join(key)}\":{val}\n")
     return vocab, merges
 
 ## Usage
-splitTextToken = "<|endoftext|>"
-specialTokens = []
-run_train_bpe("assignment1-basics/data/TinyStoriesV2-GPT4-valid.txt", 1000, specialTokens, splitTextToken, chunk_size_to_process=100*1024*1024)
-# print(initPretoken("data/test.txt", splitTextToken, specialTokens))
+if __name__ == '__main__':
+    splitTextToken = "<|endoftext|>"
+    specialTokens = []
+    # dataset = "TinyStoriesV2-GPT4-train.txt"
+    # dataset = "owt_train.txt"
+    dataset = "corpus.en"
+    run_train_bpe(f"assignment1-basics/data/{dataset}", 
+                output_path=f"assignment1-basics/data/output/{dataset}", 
+                vocab_size=500, special_tokens=specialTokens, split_text_token=splitTextToken, 
+                chunk_size_to_process=100*1024*1024, 
+                get_max_by_cache=True, get_init_multi_process=True, process_count = 4)
+    
+    
+    # print (initVocab([splitTextToken]))
+    # print (ord('j'))
