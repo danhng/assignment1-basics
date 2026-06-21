@@ -12,7 +12,7 @@ from sortedcontainers import SortedList
 
 # 1. Create a custom logger
 logger = logging.getLogger('fast_bpe')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.WARN)
 
 # 2. Create handlers
 c_handler = logging.StreamHandler()  # For console
@@ -27,6 +27,16 @@ f_handler.setFormatter(f_format)
 # 4. Add handlers to the logger
 logger.addHandler(c_handler)
 logger.addHandler(f_handler)
+
+# # returns merged bytes
+# def mergeTuple(*tupleBytesOrBytes):
+#     out = bytearray()
+#     for item in tupleBytesOrBytes: 
+#         if isinstance(item, bytes): 
+#             out.append(item)
+#         else:
+#             out.extend(item)
+#     return tuple(out)
 
 def find_chunk_boundaries(
     file: BinaryIO,
@@ -101,11 +111,10 @@ def initPretoken(inputPath: str | os.PathLike, splitTokens: str, specialTokens: 
                 matches = re.finditer(regexPretoken, chunk)
                 for match in matches: 
                     word = match.group()
-                    # word = word.replace(chr(0x20), chr(288))
-                    # word = word.replace(chr(0x0A), chr(266))
-                    chars = tuple(word) 
-                    map[chars] = map.get(chars, 0) + 1
+                    wordBytes = tuple(bytes([b]) for b in word.encode("utf-8")) # string to tuple of bytes
+                    map[wordBytes] = map.get(wordBytes, 0) + 1
         return map
+    
 
 """
     Returns: dict(tuple[str] -> count): The pretoken -> count
@@ -124,12 +133,12 @@ def processChunk(task):
             regexPretoken = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
             matches = re.finditer(regexPretoken, chunk)
             for match in matches: 
-                word = match.group()
+                word = match.group().encode("utf-8")
                 # word = word.replace(chr(0x20), chr(288)).replace(chr(0x0A), chr(266))
-                bytes = tuple(word.encode("utf-8")) # string to tuple of bytes
-                map[bytes] = map.get(bytes, 0) + 1
+                wordBytes = tuple(bytes([b]) for b in word) # string to tuple of bytes
+                map[wordBytes] = map.get(wordBytes, 0) + 1
     return map
-    
+
 
 def initPretokenMultiProcess(inputPath: str | os.PathLike, splitTokens: str, specialTokens: list[str], chunkSizeToProcess = 1024*1024, processCount = 1): 
     if __name__ == "__main__":
@@ -156,36 +165,9 @@ def initPretokenMultiProcess(inputPath: str | os.PathLike, splitTokens: str, spe
                     for word, count in submap.items(): 
                         map[word] = map.get(word, 0) + count
             logger.debug(f"Init pre token size: {len(map)}")
+            logger.debug(f"pre token: {map}")
         return map
 
-"""
-Give the pretokens, count the adjacent pairs count 
-return map tuple[str, str] -> count
-{('u',): 1, (' ', 'd', 'o', 'n'): 1, ("'", 't'): 1 ...
-pair cache (map of map): {(o, w) -> {(l, (o, w)) -> [<number of words>, <number of occurences>]}, ...}}
-"""
-def getMaxPairCount(pretokens, initPairCache = False, pairCache = {}): 
-    pairs = {}
-    maxPairCount = 0
-    maxPair = tuple()
-    for word, wordCount in pretokens.items(): 
-        # zip to create pairs. 
-        for i in range(len(word) - 1): 
-            targetPair = tuple([''.join(word[i]), ''.join(word[i+1])]) # todo flatten tuple bytes
-            # todo: iterate through all pair cache instead of words.
-            pairs[targetPair] = pairs.get(targetPair, 0) + wordCount
-            # compare max and lexicographic
-            if (pairs[targetPair] > maxPairCount) or ((pairs[targetPair] == maxPairCount) and (targetPair > maxPair)):
-                maxPairCount = pairs[targetPair]
-                maxPair = targetPair
-            if initPairCache: 
-                if targetPair not in pairCache: 
-                    pairCache[targetPair] = {}
-                if word not in pairCache[targetPair]: 
-                    pairCache[targetPair][word] = [0, 0]
-                pairCache[targetPair][word][0] = wordCount # append count to handle to multi-pair in a word
-                pairCache[targetPair][word][1] = pairCache[targetPair][word][1] + 1 # append count to handle to multi-pair in a word
-    return tuple([maxPair, maxPairCount]), pairCache
 
 """
 Give the pretokens, count the adjacent pairs count 
@@ -203,7 +185,7 @@ def getMaxPairCountCache2(pretokens, initPairCache = False, pairCache = {}, pair
         for wordBytes, wordCount in pretokens.items(): 
             # zip to create pairs. 
             for i in range(len(wordBytes) - 1): 
-                targetPair = tuple([wordBytes[i], wordBytes[i+1]]) # todo flatten tuple bytes
+                targetPair = tuple([wordBytes[i], wordBytes[i+1]]) # no need join because this is the first round
                 # todo: iterate through all pair cache instead of words.
                 pairs[targetPair] = pairs.get(targetPair, 0) + wordCount
                 # compare max and lexicographic
@@ -232,6 +214,8 @@ def getMaxPairCountCache2(pretokens, initPairCache = False, pairCache = {}, pair
                 pairCacheSort.pop()
     return tuple([maxPair, maxPairCount]), pairCache, pairCacheSort
 
+# def join
+
 """
     return new pre token after maxpair is merged
 """
@@ -247,8 +231,8 @@ def mergePretokenCache(pretokens, maxPair, pairCache, pairSortedCache: SortedLis
         newPretoken = []
         m = 0
         while m < len(wordBytes): 
-            if m < len(wordBytes)-1 and tuple([''.join(wordBytes[m]), ''.join(wordBytes[m+1])]) == maxPair[0]: 
-                newPretoken.append(maxPair[0])
+            if m < len(wordBytes)-1 and tuple([wordBytes[m], wordBytes[m+1]]) == maxPair[0]: 
+                newPretoken.append(b''.join(maxPair[0]))
                 # todo: reindex pair cache after merge
                 m=m+2 # advance past current pair
             else:
@@ -263,13 +247,12 @@ def mergePretokenCache(pretokens, maxPair, pairCache, pairSortedCache: SortedLis
         currentWordIndicesProcessed = set() 
         newIndicesProcessed = set() 
         while currentWordIndex < (len(wordBytes) - 1):
-            checkingPretokenPair = tuple([''.join(wordBytes[currentWordIndex]), ''.join(wordBytes[currentWordIndex+1])])
+            checkingPretokenPair = tuple([wordBytes[currentWordIndex], wordBytes[currentWordIndex+1]])
             logger.debug(f"checking pair {checkingPretokenPair} at index: {currentWordIndex} of word {wordBytes} ")
             if checkingPretokenPair == maxPair[0]: 
                 if currentWordIndex > 0:
-                    # newOverlappingPairBehind = tuple([''.join(word[i-1]), ''.join(maxPair[0])]) # h, ow
-                    newOverlappingPairBehind = tuple([''.join(newPretoken[newIndex-1]), ''.join(maxPair[0])]) # h, ow
-                    oldAdjacentPair = tuple([''.join(wordBytes[currentWordIndex-1]), ''.join(wordBytes[currentWordIndex])]) # h, o
+                    newOverlappingPairBehind = tuple([newPretoken[newIndex-1], b''.join(maxPair[0])]) # h, ow -> only place need join
+                    oldAdjacentPair = tuple([wordBytes[currentWordIndex-1], wordBytes[currentWordIndex]]) # h, o
                     checkNewIndex = newIndex-1
                     checkCurrentIndex = currentWordIndex-1
 
@@ -299,9 +282,9 @@ def mergePretokenCache(pretokens, maxPair, pairCache, pairSortedCache: SortedLis
 
                 if currentWordIndex < len(wordBytes) - 2:
                     # newOverlappingPairAhead = tuple([''.join(maxPair[0]), ''.join(word[i+2])]) # ow, e
-                    newOverlappingPairAhead = tuple([''.join(maxPair[0]), ''.join(newPretoken[newIndex+1])]) # ow, e
+                    newOverlappingPairAhead = tuple([b''.join(maxPair[0]), newPretoken[newIndex+1]]) # ow, e
                     checkNewIndex = newIndex
-                    oldAdjacentPair = tuple([''.join(wordBytes[currentWordIndex+1]), ''.join(wordBytes[currentWordIndex+2])]) # w, e
+                    oldAdjacentPair = tuple([wordBytes[currentWordIndex+1], wordBytes[currentWordIndex+2]]) # w, e
                     checkCurrentIndex = currentWordIndex+1
 
                     if (checkNewIndex not in newIndicesProcessed): 
@@ -332,7 +315,7 @@ def mergePretokenCache(pretokens, maxPair, pairCache, pairSortedCache: SortedLis
                 continue
             # only skip look ahead, look behind is never checked 
             # the count of this pair (non adjacent pair) is unchanged -> no need to resort this pair (count just moved from old word to new words)
-            if (currentWordIndex >= len(wordBytes) - 2 or (currentWordIndex < len(wordBytes) - 2 and maxPair[0] != tuple([''.join(wordBytes[currentWordIndex+1]), ''.join(wordBytes[currentWordIndex+2])]))):
+            if (currentWordIndex >= len(wordBytes) - 2 or (currentWordIndex < len(wordBytes) - 2 and maxPair[0] != tuple([wordBytes[currentWordIndex+1], wordBytes[currentWordIndex+2]]))):
             # if (currentWordIndex >= len(word) - 2 or (currentWordIndex < len(word) - 2 and maxPair[0] != tuple([''.join(word[currentWordIndex+1]), ''.join(word[currentWordIndex+2])]))) and (currentWordIndex <= 1 or (currentWordIndex > 0 and maxPair[0] != tuple([''.join(word[currentWordIndex-1]), ''.join(word[currentWordIndex])]))):
                 logger.debug(f"found normal non overlapping pair at cur index {currentWordIndex}: {checkingPretokenPair}")
                 if maxPair[0] == tuple(['o', 'o']) and checkingPretokenPair == tuple(['O','o']): 
@@ -366,13 +349,9 @@ def mergePretokenCache(pretokens, maxPair, pairCache, pairSortedCache: SortedLis
 def initVocab(delimTokens): 
     vocab = {}
     for k in range(len(delimTokens)): 
-        vocab[tuple(delimTokens[k].encode("utf-8"))] = k
-    for i in range(33,127):
-        vocab[i] = len(vocab)
-    for i in range(161,173):
-        vocab[i] = len(vocab)
-    for i in range(174,324):
-        vocab[i] = len(vocab)
+        vocab[delimTokens[k].encode("utf-8")] = k
+    for i in range(0,256):
+        vocab[i.to_bytes(1)] = len(vocab)
     return vocab
 
 """Given the path to an input corpus, run train a BPE tokenizer and
@@ -436,51 +415,49 @@ def run_train_bpe(
     for iteration in tqdm(range(vocab_size-len(vocab)), desc="Training vocab"): 
         logger.info(f"iteration {iteration}")
         maxPair, pairCache, pairCacheSort = getMaxPairCountCache2(pretokens, iteration == 0, pairCache, pairCacheSort)
-    #     if (maxPair[1] > 0):
-    #         logger.info(f"iter {iteration}: max pair: {maxPair}")
-    #         pretokens = mergePretokenCache(pretokens, maxPair, pairCache, pairCacheSort)
-    #         logger.info(f"iter {iteration}: pretokens size: {len(pretokens)}, pair cache size: {len(pairCache)}")
-    #         visual = ''.join(maxPair[0]).replace(chr(0x20), chr(288)).replace(chr(0x0A), chr(266))
-    #         # word = word.replace(chr(0x20), chr(288))
-    #                 # word = word.replace(chr(0x0A), chr(266))
-    #         vocab[visual] = len(vocab)
-    #         merges.append(maxPair[0])
-    #         logger.debug(f"merges: {merges}")
-    #     else: 
-    #         logger.info(f"iteration {iteration}: max pair not found, stop!")
-    #         break;
-    # #add special token to vocab
+        if (maxPair[1] > 0):
+            logger.info(f"iter {iteration}: max pair: {maxPair}")
+            pretokens = mergePretokenCache(pretokens, maxPair, pairCache, pairCacheSort)
+            logger.info(f"iter {iteration}: pretokens size: {len(pretokens)}, pair cache size: {len(pairCache)}")
+            # word = word.replace(chr(0x20), chr(288))
+                    # word = word.replace(chr(0x0A), chr(266))
+            vocab[b''.join(maxPair[0])] = len(vocab)
+            merges.append(maxPair[0])
+            logger.debug(f"merges: {merges}")
+        else: 
+            logger.info(f"iteration {iteration}: max pair not found, stop!")
+            break
+    #add special token to vocab
  
-    # end_time3 = time.perf_counter()
-    # elapsed_time2 = end_time3 - end_time2
-    # elapsed_time3 = end_time3 - start_time
-    # logger.warning(f"Vocab size: {vocab_size}, Init pretoken time: {elapsed_time1:.1f} seconds")
-    # logger.warning(f"Merge Elapsed time: {elapsed_time2:.1f} seconds")
-    # logger.warning(f"Total Elapsed time: {elapsed_time3:.1f} seconds")
-    # now = datetime.now()
-    # string_format = now.strftime("%y%m%d%H%M%S")
-    # logger.info(f"vocab: {vocab}")
+    end_time3 = time.perf_counter()
+    elapsed_time2 = end_time3 - end_time2
+    elapsed_time3 = end_time3 - start_time
+    logger.warning(f"Vocab size: {vocab_size}, Init pretoken time: {elapsed_time1:.1f} seconds")
+    logger.warning(f"Merge Elapsed time: {elapsed_time2:.1f} seconds")
+    logger.warning(f"Total Elapsed time: {elapsed_time3:.1f} seconds")
+    now = datetime.now()
+    string_format = now.strftime("%y%m%d%H%M%S")
+    logger.info(f"vocab: {vocab}")
     
-    # if output_path: 
-    #     with open(f"{output_path}-C{get_max_by_cache}-{get_init_multi_process*process_count}-{vocab_size}-{string_format}-{elapsed_time3:.1f}.txt", "w") as file:
-    #         for key,val in vocab.items(): 
-    #             file.write(f"\"{''.join(key)}\":{val}\n")
-    # return vocab, merges
-    return
+    if output_path: 
+        with open(f"{output_path}-bytes-c{get_max_by_cache}-{get_init_multi_process*process_count}-{vocab_size}-{string_format}-{elapsed_time3:.1f}.txt", "w") as file:
+            for key,val in vocab.items(): 
+                # visual = key.decode("utf-8").replace(chr(0x20), chr(288)).replace(chr(0x0A), chr(266))
+                file.write(f"\"{key}\":{val}\n")
+    return vocab, merges
 
 ## Usage
 if __name__ == '__main__':
     splitTextToken = "<|endoftext|>"
     specialTokens = []
-    # dataset = "TinyStoriesV2-GPT4-train.txt"
-    dataset = "test.txt"
+    dataset = "TinyStoriesV2-GPT4-train.txt"
+    # dataset = "test.txt"
     # dataset = "corpus.en"
     run_train_bpe(f"assignment1-basics/data/{dataset}", 
                 output_path=f"assignment1-basics/data/output/{dataset}", 
-                vocab_size=500, special_tokens=specialTokens, split_text_token=splitTextToken, 
+                vocab_size=10000, special_tokens=specialTokens, split_text_token=splitTextToken, 
                 chunk_size_to_process=100*1024*1024, 
-                get_max_by_cache=True, get_init_multi_process=True, process_count = 1)
-    
+                get_max_by_cache=True, get_init_multi_process=True, process_count = 8)
     
     # print (initVocab([splitTextToken]))
     # print (ord('j'))

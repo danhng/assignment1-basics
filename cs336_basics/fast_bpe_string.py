@@ -12,7 +12,7 @@ from sortedcontainers import SortedList
 
 # 1. Create a custom logger
 logger = logging.getLogger('fast_bpe')
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.WARNING)
 
 # 2. Create handlers
 c_handler = logging.StreamHandler()  # For console
@@ -524,7 +524,7 @@ def run_train_bpe(
     logger.info(f"vocab: {vocab}")
     
     if output_path: 
-        with open(f"{output_path}-C{get_max_by_cache}-{get_init_multi_process*process_count}-{vocab_size}-{string_format}-{elapsed_time3:.1f}.txt", "w") as file:
+        with open(f"{output_path}-string-C{get_max_by_cache}-{get_init_multi_process*process_count}-{vocab_size}-{string_format}-{elapsed_time3:.1f}.txt", "w") as file:
             for key,val in vocab.items(): 
                 file.write(f"\"{''.join(key)}\":{val}\n")
     return vocab, merges
@@ -533,14 +533,14 @@ def run_train_bpe(
 if __name__ == '__main__':
     splitTextToken = "<|endoftext|>"
     specialTokens = []
-    # dataset = "TinyStoriesV2-GPT4-train.txt"
+    dataset = "TinyStoriesV2-GPT4-train.txt"
     # dataset = "owt_train.txt"
-    dataset = "corpus.en"
+    # dataset = "corpus.en"
     run_train_bpe(f"assignment1-basics/data/{dataset}", 
                 output_path=f"assignment1-basics/data/output/{dataset}", 
-                vocab_size=500, special_tokens=specialTokens, split_text_token=splitTextToken, 
+                vocab_size=10000, special_tokens=specialTokens, split_text_token=splitTextToken, 
                 chunk_size_to_process=100*1024*1024, 
-                get_max_by_cache=True, get_init_multi_process=True, process_count = 4)
+                get_max_by_cache=True, get_init_multi_process=True, process_count = 8)
     
     
     # print (initVocab([splitTextToken]))
