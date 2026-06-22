@@ -11,32 +11,8 @@ from tqdm import tqdm
 from sortedcontainers import SortedList
 
 # 1. Create a custom logger
-logger = logging.getLogger('fast_bpe')
-logger.setLevel(logging.WARN)
-
-# 2. Create handlers
-c_handler = logging.StreamHandler()  # For console
-f_handler = logging.FileHandler('app.log', mode='w')  # For file
-
-# 3. Create formatters and add to handlers
-c_format = logging.Formatter('%(levelname)s - line %(lineno)d - %(message)s')
-f_format = logging.Formatter('%(asctime)s - %(lineno)d - %(levelname)s - %(message)s')
-c_handler.setFormatter(c_format)
-f_handler.setFormatter(f_format)
-
-# 4. Add handlers to the logger
-logger.addHandler(c_handler)
-logger.addHandler(f_handler)
-
-# # returns merged bytes
-# def mergeTuple(*tupleBytesOrBytes):
-#     out = bytearray()
-#     for item in tupleBytesOrBytes: 
-#         if isinstance(item, bytes): 
-#             out.append(item)
-#         else:
-#             out.extend(item)
-#     return tuple(out)
+logger = logging.getLogger('fast_bpe_bytes')
+logger.setLevel(logging.DEBUG)
 
 def find_chunk_boundaries(
     file: BinaryIO,
@@ -141,32 +117,32 @@ def processChunk(task):
 
 
 def initPretokenMultiProcess(inputPath: str | os.PathLike, splitTokens: str, specialTokens: list[str], chunkSizeToProcess = 1024*1024, processCount = 1): 
-    if __name__ == "__main__":
-        map = {}
-        """
-        iterate through chunks (splitted by tokens)
-        """
-        with open(inputPath, "rb") as f:
-            boundaries = find_chunk_boundaries(f, chunkSizeToProcess, bytes(splitTokens, "utf-8"))
-            # The following is a serial implementation, but you can parallelize this
-            # by sending each start/end pair to a set of processes.
+    # if __name__ == "__main__":
+    map = {}
+    """
+    iterate through chunks (splitted by tokens)
+    """
+    with open(inputPath, "rb") as f:
+        boundaries = find_chunk_boundaries(f, chunkSizeToProcess, bytes(splitTokens, "utf-8"))
+        # The following is a serial implementation, but you can parallelize this
+        # by sending each start/end pair to a set of processes.
             
-            #create task
-            tasks = []
-            for start, end in zip(boundaries[:-1], boundaries[1:]):
-                tasks.append((start, end, inputPath, splitTextToken, specialTokens))
+        #create task
+        tasks = []
+        for start, end in zip(boundaries[:-1], boundaries[1:]):
+            tasks.append((start, end, inputPath, splitTokens, specialTokens))
             
-            with multiprocessing.Pool(processes=processCount) as pool:
-            # pool.map distributes the list items across worker processes
-                iterMap = tqdm(pool.imap_unordered(processChunk, tasks), total=len(boundaries)-1, desc="Init Pretoken")
-                # submaps = pool.map(processChunk, tasks)
-                print(f"Total workers in pool: {processCount}")  # Outputs: 4
-                for submap in iterMap: 
-                    for word, count in submap.items(): 
-                        map[word] = map.get(word, 0) + count
-            logger.debug(f"Init pre token size: {len(map)}")
-            logger.debug(f"pre token: {map}")
-        return map
+        with multiprocessing.Pool(processes=processCount) as pool:
+        # pool.map distributes the list items across worker processes
+            iterMap = tqdm(pool.imap_unordered(processChunk, tasks), total=len(boundaries)-1, desc="Init Pretoken")
+            # submaps = pool.map(processChunk, tasks)
+            print(f"Total workers in pool: {processCount}")  # Outputs: 4
+            for submap in iterMap: 
+                for word, count in submap.items(): 
+                    map[word] = map.get(word, 0) + count
+        logger.debug(f"Init pre token size: {len(map)}")
+        logger.debug(f"pre token: {map}")
+    return map
 
 
 """
@@ -445,19 +421,3 @@ def run_train_bpe(
                 # visual = key.decode("utf-8").replace(chr(0x20), chr(288)).replace(chr(0x0A), chr(266))
                 file.write(f"\"{key}\":{val}\n")
     return vocab, merges
-
-## Usage
-if __name__ == '__main__':
-    splitTextToken = "<|endoftext|>"
-    specialTokens = []
-    dataset = "TinyStoriesV2-GPT4-train.txt"
-    # dataset = "test.txt"
-    # dataset = "corpus.en"
-    run_train_bpe(f"assignment1-basics/data/{dataset}", 
-                output_path=f"assignment1-basics/data/output/{dataset}", 
-                vocab_size=10000, special_tokens=specialTokens, split_text_token=splitTextToken, 
-                chunk_size_to_process=100*1024*1024, 
-                get_max_by_cache=True, get_init_multi_process=True, process_count = 8)
-    
-    # print (initVocab([splitTextToken]))
-    # print (ord('j'))
