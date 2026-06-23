@@ -9,6 +9,7 @@ import regex as re
 import logging
 from tqdm import tqdm
 from sortedcontainers import SortedList
+import json
 
 # 1. Create a custom logger
 logger = logging.getLogger('fast_bpe_bytes')
@@ -324,9 +325,21 @@ def mergePretokenCache(pretokens, maxPair, pairCache, pairSortedCache: SortedLis
 def initVocab(delimTokens): 
     vocab = {}
     for k in range(len(delimTokens)): 
-        vocab[delimTokens[k].encode("utf-8")] = k
+        vocab[k] = delimTokens[k].encode("utf-8")
     for i in range(0,256):
-        vocab[len(vocab)] = i.to_bytes(1)
+        vocab[len(vocab)] = chr(i).encode("utf-8")
+    return vocab
+
+def initVocabGPT(delimTokens): 
+    vocab = {}
+    for k in range(len(delimTokens)): 
+        vocab[k] = delimTokens[k].encode("utf-8")
+    for i in range(33,127):
+        vocab[len(vocab)] = chr(i).encode("utf-8")
+    for i in range(161,173):
+       vocab[len(vocab)] = chr(i).encode("utf-8")
+    for i in range(174,324):
+       vocab[len(vocab)] = chr(i).encode("utf-8")
     return vocab
 
 """Given the path to an input corpus, run train a BPE tokenizer and
@@ -382,7 +395,7 @@ def run_train_bpe(
     logger.info(f"Init pretokens: {len(pretokens)}")
     # logger.debug(f"init pretoken: {pretokens}")
     delimTokens = special_tokens + [split_text_token]
-    vocab = initVocab(delimTokens=delimTokens)
+    vocab = initVocabGPT(delimTokens=delimTokens)
     merges = []
     pairCache = {}
     pairCacheSort = SortedList([], key=itemgetter(1, 0)) # compare count first, then value for ties
@@ -414,9 +427,16 @@ def run_train_bpe(
     string_format = now.strftime("%y%m%d%H%M%S")
     logger.info(f"vocab: {vocab}")
     
+   
+    
     if output_path: 
-        with open(f"{output_path}-bytes-c{get_max_by_cache}-{get_init_multi_process*process_count}-{vocab_size}-{string_format}-{elapsed_time3:.1f}.txt", "w") as file:
-            for key,val in vocab.items(): 
-                # visual = key.decode("utf-8").replace(chr(0x20), chr(288)).replace(chr(0x0A), chr(266))
-                file.write(f"\"{key}\":{val}\n")
+        fileName = f"{output_path}-bytes-c{get_max_by_cache}-{get_init_multi_process*process_count}-{vocab_size}-{string_format}-{elapsed_time3:.1f}.txt"
+        serialize = {}
+        
+        for key,val in vocab.items(): 
+            visual = val.decode("utf-8").replace(chr(0x20), chr(288)).replace(chr(0x0A), chr(266))
+            serialize[visual] = key
+            # file.write(f"{visual}:{key}\n")
+        with open(fileName, "w") as f:
+            json.dump(serialize, f, indent=4)
     return vocab, merges
