@@ -427,16 +427,23 @@ def run_train_bpe(
     string_format = now.strftime("%y%m%d%H%M%S")
     logger.info(f"vocab: {vocab}")
     
-   
-    
     if output_path: 
-        fileName = f"{output_path}-bytes-c{get_max_by_cache}-{get_init_multi_process*process_count}-{vocab_size}-{string_format}-{elapsed_time3:.1f}.txt"
-        serialize = {}
-        
+        # Write vocab file
+        fileNameVocab = f"{output_path}-bytes-c{get_max_by_cache}-{get_init_multi_process*process_count}-{vocab_size}-{string_format}-{elapsed_time3:.1f}-vocab.json"        
+        serializeVocab = {}
         for key,val in vocab.items(): 
             visual = val.decode("utf-8").replace(chr(0x20), chr(288)).replace(chr(0x0A), chr(266))
-            serialize[visual] = key
+            serializeVocab[visual] = key
             # file.write(f"{visual}:{key}\n")
-        with open(fileName, "w") as f:
-            json.dump(serialize, f, indent=4)
+        with open(fileNameVocab, "w") as f:
+            json.dump(serializeVocab, f, indent=4)
+        
+        # Write merge file
+        fileNameMerges = f"{output_path}-bytes-c{get_max_by_cache}-{get_init_multi_process*process_count}-{vocab_size}-{string_format}-{elapsed_time3:.1f}-merges.json"
+        serializeMerges = []
+        for merge in merges: 
+            serializeMerges.append(tuple([pair.decode("utf-8").replace(chr(0x20), chr(288)).replace(chr(0x0A), chr(266)) for pair in merge]))
+            # file.write(f"{visual}:{key}\n")
+        with open(fileNameMerges, "w") as f:
+            json.dump(serializeMerges, f, indent=4)
     return vocab, merges
