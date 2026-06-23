@@ -12,7 +12,6 @@ from sortedcontainers import SortedList
 
 # 1. Create a custom logger
 logger = logging.getLogger('fast_bpe_bytes')
-logger.setLevel(logging.DEBUG)
 
 def find_chunk_boundaries(
     file: BinaryIO,
@@ -327,7 +326,7 @@ def initVocab(delimTokens):
     for k in range(len(delimTokens)): 
         vocab[delimTokens[k].encode("utf-8")] = k
     for i in range(0,256):
-        vocab[i.to_bytes(1)] = len(vocab)
+        vocab[len(vocab)] = i.to_bytes(1)
     return vocab
 
 """Given the path to an input corpus, run train a BPE tokenizer and
@@ -397,7 +396,7 @@ def run_train_bpe(
             logger.info(f"iter {iteration}: pretokens size: {len(pretokens)}, pair cache size: {len(pairCache)}")
             # word = word.replace(chr(0x20), chr(288))
                     # word = word.replace(chr(0x0A), chr(266))
-            vocab[b''.join(maxPair[0])] = len(vocab)
+            vocab[len(vocab)] = b''.join(maxPair[0])
             merges.append(maxPair[0])
             logger.debug(f"merges: {merges}")
         else: 

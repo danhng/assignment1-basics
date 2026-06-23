@@ -11,24 +11,7 @@ from tqdm import tqdm
 from sortedcontainers import SortedList
 
 # 1. Create a custom logger
-logger = logging.getLogger('fast_bpe')
-logger.setLevel(logging.WARNING)
-
-# 2. Create handlers
-c_handler = logging.StreamHandler()  # For console
-f_handler = logging.FileHandler('app.log', mode='w')  # For file
-
-# 3. Create formatters and add to handlers
-c_format = logging.Formatter('%(levelname)s - line %(lineno)d - %(message)s')
-f_format = logging.Formatter(
-    '%(asctime)s - %(lineno)d - %(levelname)s - %(message)s')
-c_handler.setFormatter(c_format)
-f_handler.setFormatter(f_format)
-
-# 4. Add handlers to the logger
-logger.addHandler(c_handler)
-logger.addHandler(f_handler)
-
+logger = logging.getLogger('fast_bpe_string')
 
 def find_chunk_boundaries(
     file: BinaryIO,
