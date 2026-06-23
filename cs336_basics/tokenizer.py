@@ -1,4 +1,5 @@
 from collections.abc import Iterable
+import json
 import fast_bpe_bytes as fastBpeBytes
 import fast_bpe_string as fastBpeString
 import logging
@@ -35,7 +36,20 @@ class FastTokenizer:
         - special_tokens: list[str] | None = None 
     """
     def from_files(cls, vocab_filepath, merges_filepath, special_tokens=None): 
-        return
+        # Open the file in read mode
+        vocab = {}
+        merges = []
+        # deserialize vocab files
+        with open(vocab_filepath, "r") as fileVocab:
+            # Deserialize file content
+            vocab_raw = json.load(fileVocab)
+            vocab = {id: value.replace(chr(288), chr(0x20)).replace(chr(266), chr(0x0A)).encode("utf-8") for id, value in vocab_raw.items()}
+
+        with open(merges_filepath, "r") as fileMerge:
+            # Deserialize file content
+            merges_raw = json.load(fileMerge)
+            merges = [tuple([value[0].replace(chr(288), chr(0x20)).replace(chr(266), chr(0x0A)).encode("utf-8"), value[1].replace(chr(288), chr(0x20)).replace(chr(266), chr(0x0A)).encode("utf-8")]) for value in merges_raw.items()]
+        return FastTokenizer(vocab, merges, special_tokens)
     
     """
     wordBytes: tuples of bytes
@@ -71,10 +85,16 @@ class FastTokenizer:
         newWordBytes = tuple(newWordBytes)
         return newWordBytes
     
+    GPT2PretokenRegex = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+
     """
     Encode an input text into a sequence of token IDs
     """
     def encode(self, text: str) -> list[int]: 
+        
+        # split
+        texts =  
+
         # 1. decode to bytes
         wordBytes = text.encode("utf-8")
         targetWordBytes = tuple(bytes([b]) for b in wordBytes)

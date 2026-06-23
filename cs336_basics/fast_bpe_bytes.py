@@ -433,7 +433,7 @@ def run_train_bpe(
         serializeVocab = {}
         for key,val in vocab.items(): 
             visual = val.decode("utf-8").replace(chr(0x20), chr(288)).replace(chr(0x0A), chr(266))
-            serializeVocab[visual] = key
+            serializeVocab[key] = visual
             # file.write(f"{visual}:{key}\n")
         with open(fileNameVocab, "w") as f:
             json.dump(serializeVocab, f, indent=4)
