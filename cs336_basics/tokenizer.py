@@ -1,5 +1,6 @@
 from collections.abc import Iterable
 import json
+import re
 import fast_bpe_bytes as fastBpeBytes
 import fast_bpe_string as fastBpeString
 import logging
@@ -9,11 +10,11 @@ logger = logging.getLogger('tokenizer')
 logger.setLevel(logging.DEBUG)
 
 class FastTokenizer: 
-    vocab_id_word = {}
-    vocab_word_id = {}
-    merges = []
-    merges_rank_map = {}
-    special_tokens = []
+    # vocab_id_word = {}
+    # vocab_word_id = {}
+    # merges = []
+    # merges_rank_map = {}
+    # special_tokens = []
     
     """
     vocab: dict[int, bytes]  
@@ -35,6 +36,7 @@ class FastTokenizer:
         - merges_filepath: str  
         - special_tokens: list[str] | None = None 
     """
+    @classmethod
     def from_files(cls, vocab_filepath, merges_filepath, special_tokens=None): 
         # Open the file in read mode
         vocab = {}
@@ -43,23 +45,23 @@ class FastTokenizer:
         with open(vocab_filepath, "r") as fileVocab:
             # Deserialize file content
             vocab_raw = json.load(fileVocab)
-            vocab = {id: value.replace(chr(288), chr(0x20)).replace(chr(266), chr(0x0A)).encode("utf-8") for id, value in vocab_raw.items()}
+            vocab = {int(id): value for id, value in vocab_raw.items()}
 
         with open(merges_filepath, "r") as fileMerge:
             # Deserialize file content
-            merges_raw = json.load(fileMerge)
-            merges = [tuple([value[0].replace(chr(288), chr(0x20)).replace(chr(266), chr(0x0A)).encode("utf-8"), value[1].replace(chr(288), chr(0x20)).replace(chr(266), chr(0x0A)).encode("utf-8")]) for value in merges_raw.items()]
-        return FastTokenizer(vocab, merges, special_tokens)
+            merges = json.load(fileMerge)
+            mergesTuples = [tuple(merge) for merge in merges]
+        return cls(vocab, mergesTuples, special_tokens)
     
     """
     wordBytes: tuples of bytes
     """
-    def _findHighestRank(self, wordBytes): 
+    def _findHighestRank(self, transformedWordChars): 
         maxPair = tuple()
         maxRank = 0
         i = 0
-        while i < len(wordBytes) - 1: 
-            targetPair = tuple([wordBytes[i], wordBytes[i+1]])
+        while i < len(transformedWordChars) - 1: 
+            targetPair = tuple([transformedWordChars[i], transformedWordChars[i+1]])
             rank = self.merges_rank_map.get(targetPair, 0)
             if rank > 0 and rank > maxRank: 
                 maxPair = targetPair
@@ -69,18 +71,18 @@ class FastTokenizer:
             i=i+1             
         return maxPair, maxRank
     
-        """
+    """
     wordBytes: tuples of bytes
     """
-    def _merge(self, oldWordBytes, maxPair): 
+    def _merge(self, oldWordChars, maxPair): 
         newWordBytes = []
         m = 0
-        while m < len(oldWordBytes): 
-            if m < len(oldWordBytes)-1 and tuple([oldWordBytes[m], oldWordBytes[m+1]]) == maxPair[0]: 
-                newWordBytes.append(b''.join(maxPair[0]))
+        while m < len(oldWordChars): 
+            if m < len(oldWordChars)-1 and tuple([oldWordChars[m], oldWordChars[m+1]]) == maxPair[0]: 
+                newWordBytes.append(''.join(maxPair[0]))
                 m=m+2 # advance past current pair
             else:
-                newWordBytes.append(oldWordBytes[m])
+                newWordBytes.append(oldWordChars[m])
                 m = m+1
         newWordBytes = tuple(newWordBytes)
         return newWordBytes
@@ -90,23 +92,37 @@ class FastTokenizer:
     """
     Encode an input text into a sequence of token IDs
     """
-    def encode(self, text: str) -> list[int]: 
-        
-        # split
-        texts =  
-
-        # 1. decode to bytes
+    def _encode(self, text: str) -> list[int]: 
+        # 1. encoded
         wordBytes = text.encode("utf-8")
-        targetWordBytes = tuple(bytes([b]) for b in wordBytes)
+        transformedWordChars = fastBpeBytes.bytesToShiftedUnicode(wordBytes)
         
         # 2. while no matching new pair exists, find and merge the highest ranked pair in the current bytes
-        maxPair = self._findHighestRank(targetWordBytes)
+        maxPair = self._findHighestRank(transformedWordChars)
         while maxPair[1] > 0: 
-            targetWordBytes = self._merge(targetWordBytes, maxPair)
-            maxPair = self._findHighestRank(targetWordBytes)
+            transformedWordChars = self._merge(transformedWordChars, maxPair)
+            maxPair = self._findHighestRank(transformedWordChars)
         # 3. decode final bytes and return
-        encoded = [self.vocab_word_id[word] for word in targetWordBytes]
+        encoded = [self.vocab_word_id[word] for word in transformedWordChars]
         return encoded
+    
+    """
+    Encode an input text into a sequence of token IDs
+    """
+    def encode(self, text: str) -> list[int]:         
+        splitTokenRegex = r"|"+"|".join(re.escape(escapedToken) for escapedToken in(self.special_tokens))
+        fullRegex = splitTokenRegex + self.GPT2PretokenRegex
+        logger.warning(f"Full regex: {fullRegex}")
+        matches = re.finditer(fullRegex, text)
+        output = []
+        for match in matches: 
+            chunk = match.group()
+            if chunk in self.special_tokens: 
+                output.append(self.vocab_word_id(chunk))
+            else: 
+                encodedChunk = self._encode(chunk)
+                output.append(encodedChunk)
+        return encodedChunk
     
     """
     -> Iterator[int] Given an iterable of 

@@ -21,18 +21,27 @@ f_handler.setFormatter(f_format)
 logger.addHandler(c_handler)
 logger.addHandler(f_handler)
 
+from deepdiff import DeepDiff
+
 ## Usage
 if __name__ == '__main__':
     splitTextToken = "<|endoftext|>"
     specialTokens = []
     # dataset = "test.txt"
-    dataset = "corpus.en"
+    dataset = "TinyStoriesV2-GPT4-valid.txt"
     vocab, merges = fastBpeBytes.run_train_bpe(f"assignment1-basics/data/{dataset}", 
                 output_path=f"assignment1-basics/data/output/{dataset}", 
-                vocab_size=500, special_tokens=specialTokens, split_text_token=splitTextToken, 
+                vocab_size=1000, special_tokens=specialTokens, split_text_token=splitTextToken, 
                 chunk_size_to_process=100*1024*1024, 
-                get_max_by_cache=True, get_init_multi_process=True, process_count = 4)
-
-    tokenizerr = tokenizer.FastTokenizer(vocab, merges, None)
+                get_max_by_cache=True, get_init_multi_process=True, process_count = 8)
+    
+    vocabPath = f"assignment1-basics/data/output/TinyStoriesV2-GPT4-valid.txt-bytes-cTrue-8-1000-260628143154-7.7-vocab.json"
+    mergesPath = f"assignment1-basics/data/output/TinyStoriesV2-GPT4-valid.txt-bytes-cTrue-8-1000-260628143154-7.7-merges.json"
+    tokenizerr = tokenizer.FastTokenizer.from_files(vocab_filepath=vocabPath, merges_filepath=mergesPath, special_tokens=[splitTextToken])
+    diff = DeepDiff(vocab, tokenizerr.vocab_id_word)
+    print(diff)
+    assert vocab == tokenizerr.vocab_id_word
+    assert merges == tokenizerr.merges
     wordTest = "passive"
-    logger.warning(f"{wordTest} -> {tokenizerr.encode("passive")}")
+    # logger.warning(f"{wordTest} -> {tokenizerr.encode("passive")}")
+    # logger.warning(f"{wordTest} -> {[ tokenizerr.vocab_id_word[id] for id in tokenizerr.encode("passive")]}")
