@@ -1,13 +1,11 @@
 from collections.abc import Iterable
 import json
-import re
+import regex as re
 import fast_bpe_bytes as fastBpeBytes
-import fast_bpe_string as fastBpeString
 import logging
 
 # 1. Create a custom logger
 logger = logging.getLogger('tokenizer')
-logger.setLevel(logging.DEBUG)
 
 class FastTokenizer: 
     # vocab_id_word = {}
@@ -94,12 +92,14 @@ class FastTokenizer:
     """
     def _encode(self, text: str) -> list[int]: 
         # 1. encoded
+        logger.debug(f"Word to encode: {text}")
         wordBytes = text.encode("utf-8")
         transformedWordChars = fastBpeBytes.bytesToShiftedUnicode(wordBytes)
         
         # 2. while no matching new pair exists, find and merge the highest ranked pair in the current bytes
         maxPair = self._findHighestRank(transformedWordChars)
         while maxPair[1] > 0: 
+            logger.debug(f"Find max pair: {maxPair}")
             transformedWordChars = self._merge(transformedWordChars, maxPair)
             maxPair = self._findHighestRank(transformedWordChars)
         # 3. decode final bytes and return
@@ -110,19 +110,18 @@ class FastTokenizer:
     Encode an input text into a sequence of token IDs
     """
     def encode(self, text: str) -> list[int]:         
-        splitTokenRegex = r"|"+"|".join(re.escape(escapedToken) for escapedToken in(self.special_tokens))
-        fullRegex = splitTokenRegex + self.GPT2PretokenRegex
-        logger.warning(f"Full regex: {fullRegex}")
+        splitTokenRegex = r"|".join(re.escape(escapedToken) for escapedToken in(self.special_tokens))
+        fullRegex = splitTokenRegex + r"|"+self.GPT2PretokenRegex
         matches = re.finditer(fullRegex, text)
         output = []
         for match in matches: 
             chunk = match.group()
             if chunk in self.special_tokens: 
-                output.append(self.vocab_word_id(chunk))
+                output.append(self.vocab_word_id[chunk])
             else: 
                 encodedChunk = self._encode(chunk)
-                output.append(encodedChunk)
-        return encodedChunk
+                output.extend(encodedChunk)
+        return output
     
     """
     -> Iterator[int] Given an iterable of 
