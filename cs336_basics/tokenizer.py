@@ -35,7 +35,7 @@ class FastTokenizer:
         - special_tokens: list[str] | None = None 
     """
     @classmethod
-    def from_files(cls, vocab_filepath, merges_filepath, special_tokens=None): 
+    def from_files(cls, vocab_filepath, merges_filepath, special_tokens=None, inputFormatJson=True): 
         # Open the file in read mode
         vocab = {}
         merges = []
@@ -47,9 +47,15 @@ class FastTokenizer:
 
         with open(merges_filepath, "r") as fileMerge:
             # Deserialize file content
-            merges = json.load(fileMerge)
-            mergesTuples = [tuple(merge) for merge in merges]
-        return cls(vocab, mergesTuples, special_tokens)
+            if inputFormatJson:
+                mergesRaw = json.load(fileMerge)
+                merges = [tuple(merge) for merge in mergesRaw]
+            else:
+                for line in fileMerge:
+                # .strip() removes the newline character (\n) at the end of each line
+                    mergesRaw = line.strip().split()
+                    merges.append(tuple(mergesRaw))
+        return cls(vocab, merges, special_tokens)
     
     """
     wordBytes: tuples of bytes
@@ -91,36 +97,53 @@ class FastTokenizer:
     Encode an input text into a sequence of token IDs
     """
     def _encode(self, text: str) -> list[int]: 
+        """
+         splitTokenRegex = r"|".join(special_token for special_token in(self.special_tokens))
+        matches = re.finditer(splitTokenRegex, text)
+        output = []
+        lastProcessedIndex = 0
+        for match in matches: 
+            specialTokenMatch = match.group()
+            startSpecialTokenIndex, endSpecialTokenIndex = match.span()
+            chunkText = text[lastProcessedIndex:startSpecialTokenIndex]
+            encodedChunk = self._encode(chunkText)
+        """
         # 1. encoded
-        logger.debug(f"Word to encode: {text}")
-        wordBytes = text.encode("utf-8")
-        transformedWordChars = fastBpeBytes.bytesToShiftedUnicode(wordBytes)
-        
-        # 2. while no matching new pair exists, find and merge the highest ranked pair in the current bytes
-        maxPair = self._findHighestRank(transformedWordChars)
-        while maxPair[1] > 0: 
-            logger.debug(f"Find max pair: {maxPair}")
-            transformedWordChars = self._merge(transformedWordChars, maxPair)
+        logger.debug(f"Chunk to encode: {text}")
+        matches = re.finditer(self.GPT2PretokenRegex, text)
+        output = []
+        for match in matches: 
+            wordBytes = match.group().encode("utf-8")
+            transformedWordChars = fastBpeBytes.bytesToShiftedUnicode(wordBytes)
+            # 2. while no matching new pair exists, find and merge the highest ranked pair in the current bytes
             maxPair = self._findHighestRank(transformedWordChars)
-        # 3. decode final bytes and return
-        encoded = [self.vocab_word_id[word] for word in transformedWordChars]
-        return encoded
+            while maxPair[1] > 0: 
+                logger.debug(f"Find max pair: {maxPair}")
+                transformedWordChars = self._merge(transformedWordChars, maxPair)
+                maxPair = self._findHighestRank(transformedWordChars)
+            # 3. decode final bytes and return
+            encoded = [self.vocab_word_id[word] for word in transformedWordChars]
+            output.extend(encoded)
+            logger.debug(f"append {encoded}: current encoded chunk output: {output}")
+        return output
     
     """
     Encode an input text into a sequence of token IDs
     """
     def encode(self, text: str) -> list[int]:         
-        splitTokenRegex = r"|".join(re.escape(escapedToken) for escapedToken in(self.special_tokens))
-        fullRegex = splitTokenRegex + r"|"+self.GPT2PretokenRegex
-        matches = re.finditer(fullRegex, text)
+        splitTokenRegex = r"|".join(re.escape(special_token) for special_token in(self.special_tokens))
+        matches = re.finditer(splitTokenRegex, text)
         output = []
+        lastProcessedIndex = 0
         for match in matches: 
-            chunk = match.group()
-            if chunk in self.special_tokens: 
-                output.append(self.vocab_word_id[chunk])
-            else: 
-                encodedChunk = self._encode(chunk)
-                output.extend(encodedChunk)
+            specialTokenMatch = match.group()
+            startSpecialTokenIndex, endSpecialTokenIndex = match.span()
+            chunkText = text[lastProcessedIndex:startSpecialTokenIndex]
+            encodedChunk = self._encode(chunkText)
+            output.extend(encodedChunk) # append text encoded
+            output.append(self.vocab_word_id[specialTokenMatch]) # append the match
+            lastProcessedIndex = endSpecialTokenIndex
+            logger.debug(f"after adding {match.group()}: current encoded output: {output}")
         return output
     
     """

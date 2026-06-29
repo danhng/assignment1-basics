@@ -90,14 +90,25 @@ def initPretoken(inputPath: str | os.PathLike, splitTokens: str, specialTokens: 
                     wordBytes = tuple(bytes([b]) for b in word.encode("utf-8")) # string to tuple of bytes
                     map[wordBytes] = map.get(wordBytes, 0) + 1
         return map
-    
-def bytesToShiftedUnicode(wordBytes): 
-    outputChars = []
-    for b in wordBytes: 
+
+def initEncodedBasedVocab(): 
+    dictEncoded = {}
+    # iterate through first 256 possible values
+    for b in range(0,256): 
         if 33 <= int(b) <= 126 or 161 <= int(b) <= 172 or 174 <= int(b): 
-            outputChars.append(chr(b))
-        else: 
-            outputChars.append(chr(b+256))
+            dictEncoded[b] = chr(b)
+    i = 0
+    for b in range(0,256): 
+        if not (33 <= int(b) <= 126 or 161 <= int(b) <= 172 or 174 <= int(b)): 
+            dictEncoded[b] = chr(256+i)
+            i = i+1
+    return dictEncoded
+
+BASE_VOCAB = initEncodedBasedVocab()
+
+# WRONG. 
+def bytesToShiftedUnicode(wordBytes): 
+    outputChars = [BASE_VOCAB[b] for b in wordBytes]
     return tuple(outputChars)
 
 """
@@ -330,25 +341,21 @@ def mergePretokenCache(pretokens, maxPair, pairCache, pairSortedCache: SortedLis
     # remove maxpair as pair from the cache after merge
     return pretokens
 
-def initVocab(delimTokens): 
-    vocab = {}
-    for k in range(len(delimTokens)): 
-        vocab[k] = delimTokens[k].encode("utf-8")
-    for i in range(0,256):
-        vocab[len(vocab)] = chr(i).encode("utf-8")
-    return vocab
+
 
 def initVocabGPT(delimTokens): 
     vocab = {}
     for k in range(len(delimTokens)): 
         vocab[k] = delimTokens[k]
-    for i in range(33,127):
-        vocab[len(vocab)] = chr(i)
-    for i in range(161,173):
-       vocab[len(vocab)] = chr(i)
-    # shift non printable characters from codepoint 256 so they become printable, just for presentation purpose (68 non printable characters -> we shift to (256+68) = 324)
-    for i in range(174,324):
-       vocab[len(vocab)] = chr(i)
+    # iterate through first 256 possible values
+    for b in range(0,256): 
+        if 33 <= int(b) <= 126 or 161 <= int(b) <= 172 or 174 <= int(b): 
+            vocab[len(vocab)] = chr(b)
+    i = 0
+    for b in range(0,256): 
+        if not (33 <= int(b) <= 126 or 161 <= int(b) <= 172 or 174 <= int(b)): 
+            vocab[len(vocab)] = chr(256+i)
+            i = i+1
     return vocab
 
 """Given the path to an input corpus, run train a BPE tokenizer and
@@ -391,6 +398,7 @@ def run_train_bpe(
     get_max_by_cache = True,
     get_init_multi_process = True,
     process_count = 1,
+    outputMergeJson = True,
     **kwargs,
 ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
     start_time = time.perf_counter()
@@ -449,8 +457,14 @@ def run_train_bpe(
         # Write merge file
         fileNameMerges = f"{output_path}-bytes-c{get_max_by_cache}-{get_init_multi_process*process_count}-{vocab_size}-{string_format}-{elapsed_time3:.1f}-merges.json"
         serializeMerges = []
-        for merge in merges: 
-            serializeMerges.append(tuple([pair for pair in merge]))
-        with open(fileNameMerges, "w") as f:
-            json.dump(serializeMerges, f, indent=4)
+        if outputMergeJson:
+            for merge in merges: 
+                serializeMerges.append(tuple([pair for pair in merge]))
+            with open(fileNameMerges, "w") as f:
+                json.dump(serializeMerges, f, indent=4)
+        else: 
+            with open(fileNameMerges, "w") as f:
+                for merge in merges: 
+                    serializeMerges.append(f"{merge[0]} {merge[1]}\n")
+                f.writelines(serializeMerges)
     return vocab, merges
