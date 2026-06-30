@@ -1,7 +1,8 @@
 from collections.abc import Iterable
 import json
 import regex as re
-import fast_bpe_bytes as fastBpeBytes
+from .fast_bpe_bytes import bytesToShiftedUnicode
+from .fast_bpe_bytes import BASE_VOCAB_WORD_BYTE
 import logging
 
 # 1. Create a custom logger
@@ -114,7 +115,8 @@ class FastTokenizer:
         output = []
         for match in matches: 
             wordBytes = match.group().encode("utf-8")
-            transformedWordChars = fastBpeBytes.bytesToShiftedUnicode(wordBytes)
+            transformedWordChars = bytesToShiftedUnicode(wordBytes)
+            logger.debug(f"{match} -> utf8 bytes: <{wordBytes}> -> transformed: <{transformedWordChars}>")
             # 2. while no matching new pair exists, find and merge the highest ranked pair in the current bytes
             maxPair = self._findHighestRank(transformedWordChars)
             while maxPair[1] > 0: 
@@ -144,6 +146,10 @@ class FastTokenizer:
             output.append(self.vocab_word_id[specialTokenMatch]) # append the match
             lastProcessedIndex = endSpecialTokenIndex
             logger.debug(f"after adding {match.group()}: current encoded output: {output}")
+        if lastProcessedIndex == 0: 
+            logger.debug("No split token is found -> adding whole text")
+            encodedChunk = self._encode(text)
+            output.extend(encodedChunk) # append text encoded
         return output
     
     """
@@ -153,10 +159,31 @@ class FastTokenizer:
     memory.
     """
     def encode_iterable(self, iterable: Iterable[str]): 
-        return
+        for text in iterable: 
+            encoded = self.encode(text)
+            yield encoded
 
     """
     -> str Decode a sequence of token IDs into text.
     """
     def decode(self, ids: list[int]): 
-        return
+        # map token ids to chars 
+        # map chars to bytes
+        # encode utf 8
+        output = ""
+        bs = bytearray()
+        for id in ids:
+            tokenWord = self.vocab_id_word[id]
+            if tokenWord not in self.special_tokens: 
+                for c in tokenWord: # char -> decoded byte -> append to byte array
+                    bs.append(BASE_VOCAB_WORD_BYTE[c])
+            else: 
+                if bs: 
+                    output = output + bs.decode("utf-8")
+                    bs = bytearray()
+                output = output + tokenWord
+        if bs and not output: 
+                output = bs.decode("utf-8")
+        return output
+    
+    # bytearray(b' are \xc3\xbc? \xf0A;%')

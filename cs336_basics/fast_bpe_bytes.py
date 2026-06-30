@@ -104,11 +104,15 @@ def initEncodedBasedVocab():
             i = i+1
     return dictEncoded
 
-BASE_VOCAB = initEncodedBasedVocab()
+def initEncodedBasedVocabReverse(baseVocab): 
+    reverse = {value:key for key, value in baseVocab.items()}
+    return reverse
 
-# WRONG. 
+BASE_VOCAB_BYTE_WORD = initEncodedBasedVocab()
+BASE_VOCAB_WORD_BYTE = initEncodedBasedVocabReverse(BASE_VOCAB_BYTE_WORD)
+
 def bytesToShiftedUnicode(wordBytes): 
-    outputChars = [BASE_VOCAB[b] for b in wordBytes]
+    outputChars = [BASE_VOCAB_BYTE_WORD[b] for b in wordBytes]
     return tuple(outputChars)
 
 """
