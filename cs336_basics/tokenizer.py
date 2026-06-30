@@ -133,21 +133,26 @@ class FastTokenizer:
     Encode an input text into a sequence of token IDs
     """
     def encode(self, text: str) -> list[int]:         
-        splitTokenRegex = r"|".join(re.escape(special_token) for special_token in(self.special_tokens))
-        matches = re.finditer(splitTokenRegex, text)
-        output = []
-        lastProcessedIndex = 0
-        for match in matches: 
-            specialTokenMatch = match.group()
-            startSpecialTokenIndex, endSpecialTokenIndex = match.span()
-            chunkText = text[lastProcessedIndex:startSpecialTokenIndex]
-            encodedChunk = self._encode(chunkText)
-            output.extend(encodedChunk) # append text encoded
-            output.append(self.vocab_word_id[specialTokenMatch]) # append the match
-            lastProcessedIndex = endSpecialTokenIndex
-            logger.debug(f"after adding {match.group()}: current encoded output: {output}")
-        if lastProcessedIndex == 0: 
-            logger.debug("No split token is found -> adding whole text")
+        if self.special_tokens: 
+            splitTokenRegex = r"|".join(re.escape(special_token) for special_token in(self.special_tokens))
+            lastProcessedIndex = 0
+            matches = re.finditer(splitTokenRegex, text)
+            output = []
+            for match in matches: 
+                specialTokenMatch = match.group()
+                startSpecialTokenIndex, endSpecialTokenIndex = match.span()
+                chunkText = text[lastProcessedIndex:startSpecialTokenIndex]
+                encodedChunk = self._encode(chunkText)
+                output.extend(encodedChunk) # append text encoded
+                output.append(self.vocab_word_id[specialTokenMatch]) # append the match
+                lastProcessedIndex = endSpecialTokenIndex
+                logger.debug(f"after adding {match.group()}: current encoded output: {output}")
+            if lastProcessedIndex == 0: 
+                logger.debug("No split token is found -> adding whole text")
+                encodedChunk = self._encode(text)
+                output.extend(encodedChunk) # append text encoded
+        else: 
+            logger.debug("No split token is provided -> adding whole text")
             encodedChunk = self._encode(text)
             output.extend(encodedChunk) # append text encoded
         return output
