@@ -8,6 +8,9 @@ import logging
 # 1. Create a custom logger
 logger = logging.getLogger('tokenizer')
 
+VOCAB_MODE_BYTE = 1
+VOCAB_MODE_UNICODE = 2
+
 class FastTokenizer: 
     # vocab_id_word = {}
     # vocab_word_id = {}
@@ -21,10 +24,20 @@ class FastTokenizer:
     special_tokens: list[str] | None = None
     """
     def __init__(self, vocab, merges, special_tokens=None):
-        self.vocab_id_word = vocab
+        # if vocab mode is byte -> 
+        if isinstance(vocab[0], bytes):
+            logger.debug("Vocab input is of bytes type -> convert to unicoded internal vocab")
+            self.vocab_id_word = {key:bytesToShiftedUnicode(value, merge=True) for key, value in vocab.items()}
+        else: 
+            assert isinstance(vocab[0], str)
+            logger.debug("Vocab input is of unicode type -> convert to unicoded internal vocab")
+            self.vocab_id_word = vocab
+        
+        #word_id is simply the reverse of id_word dict
+        self.vocab_word_id = {value:key for key, value in self.vocab_id_word.items()}
+
         self.merges = merges
         self.special_tokens = special_tokens
-        self.vocab_word_id = {value:key for key, value in self.vocab_id_word.items()}
         self.merges_rank_map = {merge: id for merge,id in zip(merges, range(len(merges), 0, -1))} # merge -> rank
     
     """
@@ -151,11 +164,11 @@ class FastTokenizer:
                 logger.debug("No split token is found -> adding whole text")
                 encodedChunk = self._encode(text)
                 output.extend(encodedChunk) # append text encoded
+            return output
         else: 
             logger.debug("No split token is provided -> adding whole text")
             encodedChunk = self._encode(text)
-            output.extend(encodedChunk) # append text encoded
-        return output
+            return encodedChunk
     
     """
     -> Iterator[int] Given an iterable of 
@@ -179,14 +192,14 @@ class FastTokenizer:
         bs = bytearray()
         for id in ids:
             tokenWord = self.vocab_id_word[id]
-            if tokenWord not in self.special_tokens: 
+            if  not self.special_tokens or (self.special_tokens and tokenWord not in self.special_tokens): # if no special token -> just append, if token is normal -> just append
                 for c in tokenWord: # char -> decoded byte -> append to byte array
                     bs.append(BASE_VOCAB_WORD_BYTE[c])
             else: 
                 if bs: 
-                    output = output + bs.decode("utf-8")
+                    output = output + bs.decode("utf-8") # flush byte array buffer up until special token
                     bs = bytearray()
-                output = output + tokenWord
+                output = output + tokenWord # add special token
         if bs and not output: 
                 output = bs.decode("utf-8")
         return output

@@ -111,8 +111,10 @@ def initEncodedBasedVocabReverse(baseVocab):
 BASE_VOCAB_BYTE_WORD = initEncodedBasedVocab()
 BASE_VOCAB_WORD_BYTE = initEncodedBasedVocabReverse(BASE_VOCAB_BYTE_WORD)
 
-def bytesToShiftedUnicode(wordBytes): 
+def bytesToShiftedUnicode(wordBytes, merge=False): 
     outputChars = [BASE_VOCAB_BYTE_WORD[b] for b in wordBytes]
+    if merge:
+        return ''.join(outputChars)
     return tuple(outputChars)
 
 """

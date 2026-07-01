@@ -285,9 +285,9 @@ def test_address_matches_tiktoken():
         corpus_contents = f.read()
     reference_ids = reference_tokenizer.encode(corpus_contents)
     ids = tokenizer.encode(corpus_contents)
-    assert ids == reference_ids
 
     assert tokenizer.decode(ids) == corpus_contents
+    assert ids == reference_ids
     assert reference_tokenizer.decode(reference_ids) == corpus_contents
 
 
