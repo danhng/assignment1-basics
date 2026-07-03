@@ -1,6 +1,8 @@
 from collections.abc import Iterable
 import json
+import numpy as np
 import regex as re
+from tqdm import tqdm
 from .fast_bpe_bytes import bytesToShiftedUnicode
 from .fast_bpe_bytes import BASE_VOCAB_WORD_BYTE
 import logging
@@ -181,6 +183,17 @@ class FastTokenizer:
             encodedChunk = self._encode(text)
             return encodedChunk
     
+        
+    def serialize_encode(self, input_path, output_filepath):
+        # Open a raw binary file in append mode
+        with open(output_filepath, 'wb') as outputFile, open(input_path, 'r') as inputFile:
+            # Process your text in batches/chunks
+            for _id in tqdm(self.encode_iterable(inputFile), desc="Writing token ids"):
+                # 1. Tokenize the current chunk
+                uint16_chunk = np.array(_id, dtype=np.uint16)
+                # 3. Write the raw bytes directly to the file
+                uint16_chunk.tofile(outputFile)
+    
     """
     -> Iterator[int] Given an iterable of 
     strings (e.g., a Python file handle), return a generator that lazily yields token IDs. This is 
@@ -204,10 +217,6 @@ class FastTokenizer:
         
         # if we are given a nested list, flatten them first
         if (ids and isinstance(ids[0], list)): 
-            # idsList = []
-            # for idList in ids: 
-            #     idsList.extend(idList)
-            # ids = idsList
             ids = [item for sublist in ids for item in sublist]
         
         for id in ids:
@@ -223,5 +232,3 @@ class FastTokenizer:
         if bs: 
                 output = output + bs.decode("utf-8")
         return output
-    
-    # bytearray(b' are \xc3\xbc? \xf0A;%')

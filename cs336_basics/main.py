@@ -1,4 +1,6 @@
 from deepdiff import DeepDiff
+import numpy as np
+import tqdm
 
 from .tokenizer import FastTokenizer
 from .fast_bpe_bytes import run_train_bpe
@@ -7,7 +9,7 @@ import logging
 from ..tests import test_tokenizer
 
 # 1. Create a custom logger
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger('main')
 # # 2. Create handlers
 # c_handler = logging.StreamHandler()  # For console
@@ -22,42 +24,20 @@ def testTokenizer():
     splitTextToken = "<|endoftext|>"
     specialTokens = []
     dataset = "test.txt"
-    dataset = "TinyStoriesV2-GPT4-valid.txt"
-    vocab, merges = run_train_bpe(f"assignment1-basics/data/{dataset}", 
-                output_path=f"assignment1-basics/data/output/{dataset}", 
-                vocab_size=1000, special_tokens=specialTokens, split_text_token=splitTextToken, 
-                chunk_size_to_process=100*1024*1024, 
-                get_max_by_cache=True, get_init_multi_process=True, process_count = 4, outputMergeJson=False)
-    
+    dataset = "TinyStoriesV2-GPT4-train.txt"
+    # vocab, merges = run_train_bpe(f"assignment1-basics/data/{dataset}", 
+    #             output_path=f"assignment1-basics/data/output/{dataset}", 
+    #             vocab_size=10000, special_tokens=specialTokens, split_text_token=splitTextToken, 
+    #             chunk_size_to_process=100*1024*1024, 
+    #             get_max_by_cache=True, get_init_multi_process=True, process_count = 4, outputMergeJson=False)
   
     
-    # vocabPath = "assignment1-basics/data/gpt2_vocab.json"
-    # mergesPath = "assignment1-basics/data/gpt2_merges.txt"
-    # tokenizerr = test_tokenizer.get_tokenizer_from_vocab_merges_path(
-    #     vocab_path=vocabPath, merges_path=mergesPath, special_tokens=["<|endoftext|>"]
-    # )
-    # tokenizerr = FastTokenizer.from_files(vocab_filepath=vocabPath, merges_filepath=mergesPath, special_tokens=[splitTextToken], inputFormatJson=False)
-    # diff = DeepDiff(vocab, tokenizerr.vocab_id_word)
-    # print(diff)
-    # assert vocab == tokenizerr.vocab_id_word
-    # assert merges == tokenizerr.merges
+    datasetEncode = "TinyStoriesV2-GPT4-valid.txt"
+    vocabPath = "assignment1-basics/data/output/TinyStoriesV2-GPT4-train.txt-bytes-cTrue-4-10000-260703145356-219.7-vocab.json"
+    mergesPath = "assignment1-basics/data/output/TinyStoriesV2-GPT4-train.txt-bytes-cTrue-4-10000-260703145356-219.7-merges.json"
+    tokenizerr = FastTokenizer.from_files(vocab_filepath=vocabPath, merges_filepath=mergesPath, special_tokens=[splitTextToken], inputFormatJson=False)
+    tokenizerr.serialize_encode(f"assignment1-basics/data/{datasetEncode}", f"assignment1-basics/data/output/{datasetEncode}-encoded")
 
-    # all_ids = []
-    # with open("assignment1-basics/data/tinystories_sample.txt") as f:
-    #     for _id in tokenizerr.encode_iterable(f):
-    #         all_ids.append(_id)
-    
-    # test = "Héllò hôw <|endoftext|><|endoftext|> are ü? 🙃<|endoftext|>"
-    # test = "Hello, how are you?"
-    # # test = "Héllò hôw <|endoftext|><|endoftext|> are ü?<|endoftext|>"
-    # # test = "🙃"
-    # encoded = tokenizerr.encode(test)
-    # decoded = tokenizerr.decode(encoded)
-    # logger.info(f"{test} encoded -> {encoded}")
-    # logger.info(f"{encoded} decoded -> {tokenizerr.decode(encoded)}")
-    # [15496, 11, 703, 389, 345, 30]
-
-    # assert test == decoded
 
 def test_tokenizer_full(): 
     test_functions = [
@@ -102,11 +82,14 @@ def test_tokenizer_full():
 ## Usage
 if __name__ == '__main__':
     # test_tokenizer_full()
-    test_tokenizer.test_encode_memory_usage()
+    # test_tokenizer.test_encode_memory_usage()
     # test_tokenizer.test_encode_special_token_double_newline_non_whitespace()
     # test_tokenizer.test_roundtrip_unicode_string_with_special_tokens()
     # test_tokenizer.test_unicode_string_with_special_tokens_matches_tiktoken()
     # test_tokenizer.test_roundtrip_empty()
     # test_tokenizer.test_roundtrip_empty()
     # test_tokenizer.test_roundtrip_empty()
-#    testTokenizer()
+    # testTokenizer()
+    massive_array = np.memmap("assignment1-basics/data/output/TinyStoriesV2-GPT4-valid.txt-encoded", dtype=np.uint16, mode='r')
+    # You can now slice it like a normal array
+    batch = massive_array[0:1024]
