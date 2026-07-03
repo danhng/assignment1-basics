@@ -123,6 +123,7 @@ def bytesToShiftedUnicode(wordBytes, merge=False):
 def processChunk(task): 
     start, end, inputPath, splitTokens, specialTokens = task
     delimTokens = specialTokens + [splitTokens]
+    delimTokens = sorted(delimTokens, key=len, reverse=True)
     map = {}
     with open(inputPath, "rb") as f:
         f.seek(start)

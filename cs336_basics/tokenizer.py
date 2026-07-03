@@ -32,13 +32,21 @@ class FastTokenizer:
             assert isinstance(vocab[0], str)
             logger.debug("Vocab input is of unicode type -> convert to unicoded internal vocab")
             self.vocab_id_word = vocab
-        
         #word_id is simply the reverse of id_word dict
+        
         self.vocab_word_id = {value:key for key, value in self.vocab_id_word.items()}
 
-        self.merges = merges
-        self.special_tokens = special_tokens
-        self.merges_rank_map = {merge: id for merge,id in zip(merges, range(len(merges), 0, -1))} # merge -> rank
+        if isinstance(merges[0][0], bytes): 
+            logger.debug("merge input is of bytes type -> convert to unicoded internal vocab")
+            self.merges = [tuple([bytesToShiftedUnicode(element, merge=True) for element in mergePair]) for mergePair in merges]
+        else: 
+            self.merges = merges
+        
+        if (special_tokens): 
+            self.special_tokens = sorted(special_tokens, key=len, reverse=True) # todo: sort by order of length
+        else: 
+            self.special_tokens = special_tokens
+        self.merges_rank_map = {merge: id for merge,id in zip(self.merges, range(len(self.merges), 0, -1))} # merge -> rank
     
     """
     Class method that constructs and returns a Tokenizer from a serialized vocabulary and list of merges (in the 
@@ -71,6 +79,8 @@ class FastTokenizer:
                     merges.append(tuple(mergesRaw))
         return cls(vocab, merges, special_tokens)
     
+    #todo: find highest rank pairs belong to word. 
+    
     """
     wordBytes: tuples of bytes
     """
@@ -81,11 +91,12 @@ class FastTokenizer:
         while i < len(transformedWordChars) - 1: 
             targetPair = tuple([transformedWordChars[i], transformedWordChars[i+1]])
             rank = self.merges_rank_map.get(targetPair, 0)
+            logger.debug(f"Merge pair {targetPair} -> rank {rank}")
             if rank > 0 and rank > maxRank: 
                 maxPair = targetPair
                 maxRank = rank
-                i=i+2
-                break
+                # i=i+2
+                # break
             i=i+1             
         return maxPair, maxRank
     
@@ -160,10 +171,10 @@ class FastTokenizer:
                 output.append(self.vocab_word_id[specialTokenMatch]) # append the match
                 lastProcessedIndex = endSpecialTokenIndex
                 logger.debug(f"after adding {match.group()}: current encoded output: {output}")
-            if lastProcessedIndex == 0: 
-                logger.debug("No split token is found -> adding whole text")
-                encodedChunk = self._encode(text)
-                output.extend(encodedChunk) # append text encoded
+            # if lastProcessedIndex == 0: 
+            lastText = text[lastProcessedIndex:]
+            encodedChunk = self._encode(lastText)
+            output.extend(encodedChunk) # append text encoded
             return output
         else: 
             logger.debug("No split token is provided -> adding whole text")
@@ -190,6 +201,15 @@ class FastTokenizer:
         # encode utf 8
         output = ""
         bs = bytearray()
+        
+        # if we are given a nested list, flatten them first
+        if (ids and isinstance(ids[0], list)): 
+            # idsList = []
+            # for idList in ids: 
+            #     idsList.extend(idList)
+            # ids = idsList
+            ids = [item for sublist in ids for item in sublist]
+        
         for id in ids:
             tokenWord = self.vocab_id_word[id]
             if  not self.special_tokens or (self.special_tokens and tokenWord not in self.special_tokens): # if no special token -> just append, if token is normal -> just append
@@ -200,8 +220,8 @@ class FastTokenizer:
                     output = output + bs.decode("utf-8") # flush byte array buffer up until special token
                     bs = bytearray()
                 output = output + tokenWord # add special token
-        if bs and not output: 
-                output = bs.decode("utf-8")
+        if bs: 
+                output = output + bs.decode("utf-8")
         return output
     
     # bytearray(b' are \xc3\xbc? \xf0A;%')
