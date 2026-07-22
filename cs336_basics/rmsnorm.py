@@ -19,9 +19,14 @@ class RMSNorm(torch.nn.Module):
     def forward(self, x: torch.Tensor):
         x_dtype = x.dtype
         x = x.to(torch.float32)
-        rms = torch.sqrt(torch.mean(x ** 2) + self.eps)
+        rms = torch.rsqrt(torch.mean(x ** 2, dim=-1, keepdim=True) + self.eps)
+        print("rms norm: ", rms)
         # x = x.to(x_dtype)
-        x_rms_normed = torch.div(x, rms) * self.gammas
+        x_rms_normed = x * rms * self.gammas
         return x_rms_normed.to(x_dtype)
-        
+
+in_features = torch.Tensor([1, 2, 3])
+RMSLayer = RMSNorm(3, 1e-5, None, None)
+print(RMSLayer.forward(in_features))
+    # raise NotImplementedError
         

@@ -13,7 +13,7 @@ import os
 
 from cs336_basics import tokenizer
 from cs336_basics import linear
-from cs336_basics import rms_norm
+from cs336_basics import rmsnorm
 import cs336_basics.embedding 
 
 def run_linear(
@@ -385,7 +385,7 @@ def run_rmsnorm(
         Float[Tensor,"... d_model"]: Tensor of with the same shape as `in_features` with the output of running
         RMSNorm of the `in_features`.
     """
-    RMSLayer = rms_norm.RMSNorm(d_model, eps, None, None, weights)
+    RMSLayer = rmsnorm.RMSNorm(d_model, eps, None, None, weights)
     return RMSLayer.forward(in_features)
     # raise NotImplementedError
 
