@@ -14,7 +14,8 @@ import os
 from cs336_basics import tokenizer
 from cs336_basics import linear
 from cs336_basics import rmsnorm
-import cs336_basics.embedding 
+from cs336_basics import swiglu
+from cs336_basics import embedding
 
 def run_linear(
     d_in: int,
@@ -57,7 +58,7 @@ def run_embedding(
     Returns:
         Float[Tensor, "... d_model"]: Batch of embeddings returned by your Embedding layer.
     """
-    embedding_layer = cs336_basics.embedding.Embedding(vocab_size, d_model, None, None, weights)
+    embedding_layer = embedding.Embedding(vocab_size, d_model, None, None, weights)
     return embedding_layer.forward(token_ids)
 
 
@@ -90,7 +91,9 @@ def run_swiglu(
     # swiglu.w1.weight.data = w1_weight
     # swiglu.w2.weight.data = w2_weight
     # swiglu.w3.weight.data = w3_weight
-    raise NotImplementedError
+    
+    swiglu_ = swiglu.SwiGLU(d_ff, d_model, None, None, w1_weight, w2_weight, w3_weight)
+    return swiglu_.forward(in_features)
 
 
 def run_scaled_dot_product_attention(

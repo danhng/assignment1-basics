@@ -19,10 +19,9 @@ class RMSNorm(torch.nn.Module):
     def forward(self, x: torch.Tensor):
         x_dtype = x.dtype
         x = x.to(torch.float32)
-        rms = torch.rsqrt(torch.mean(x ** 2, dim=-1, keepdim=True) + self.eps)
-        print("rms norm: ", rms)
+        r_rms = torch.rsqrt(torch.mean(x ** 2, dim=-1, keepdim=True) + self.eps)
         # x = x.to(x_dtype)
-        x_rms_normed = x * rms * self.gammas
+        x_rms_normed = x * r_rms * self.gammas
         return x_rms_normed.to(x_dtype)
 
 in_features = torch.Tensor([1, 2, 3])

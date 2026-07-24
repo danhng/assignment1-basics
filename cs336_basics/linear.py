@@ -19,15 +19,16 @@ class Linear(nn.Module):
         if weight is not None: 
             weight.to(device)
             weight.to(dtype)
-            self.W = torch.nn.Parameter(weight)
+            self.weight = torch.nn.Parameter(weight)
         else: 
-            W = torch.empty(size = (in_features, out_features), dtype=dtype, device=device) # initialize based on Xavier
+            weight = torch.empty(size = (out_features, in_features), dtype=dtype, device=device) # initialize based on Xavier
             std_init_weight = math.sqrt(2/(in_features+out_features))
-            nn.init.trunc_normal_(W, mean=0, std=std_init_weight, a=-3 * std_init_weight, b = 3*std_init_weight)
-            self.W = torch.nn.Parameter(W)
+            nn.init.trunc_normal_(weight, mean=0, std=std_init_weight, a=-3 * std_init_weight, b = 3*std_init_weight)
+            self.weight = torch.nn.Parameter(weight)
+            nn.Linear
     
     # x: input tensor of ..., d_model
     def forward(self, x: Tensor): 
-        y = torch.matmul(x, self.W.T) # y = x * WT
+        y = torch.matmul(x, self.weight.T) # y = x * WT
         return y
         
