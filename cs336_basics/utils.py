@@ -1,3 +1,4 @@
+import math
 import torch
 
 def softmax(x: torch.Tensor, i: int): 
@@ -12,3 +13,17 @@ x = x-i_max.values
 i_sum_e = torch.sum(torch.exp(x), dim=-1, keepdim=True)
 print(torch.exp(x)/i_sum_e)
 
+
+'''
+    Q: Float[Tensor, " ... queries d_k"],
+    K: Float[Tensor, " ... keys d_k"],
+    V: Float[Tensor, " ... keys d_v"],
+    mask: Bool[Tensor, " ... queries keys"] | None = None,
+'''
+def scaled_dot_product_attention(q, k, v, mask):
+    d_k = q.size(-1)
+    pre_softmax = torch.matmul(q, k.mT) / math.sqrt(d_k) # size ..., seq_len, seq_len
+    softmaxes = softmax(pre_softmax, -1) # size ..., seq_len, seq_len => this is attention score of seq_len * seq_len
+    value_weighted_sum = softmaxes.matmul(v) # for a token, we multiply the attention scores of all other tokens with each of the d_k of that token (push all other tokens attention to a single value for each of d_k dim), doing that for all d_k dimensions to form the final representation of the token.
+    return value_weighted_sum 
+    
