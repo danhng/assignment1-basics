@@ -23,6 +23,8 @@ print(torch.exp(x)/i_sum_e)
 def scaled_dot_product_attention(q, k, v, mask):
     d_k = q.size(-1)
     pre_softmax = torch.matmul(q, k.mT) / math.sqrt(d_k) # size ..., seq_len, seq_len
+    masked = torch.where(mask, 0.0, float('-inf')) #torch.where is very useful when using masked boolean tensors
+    pre_softmax = pre_softmax + masked
     softmaxes = softmax(pre_softmax, -1) # size ..., seq_len, seq_len => this is attention score of seq_len * seq_len
     value_weighted_sum = softmaxes.matmul(v) # for a token, we multiply the attention scores of all other tokens with each of the d_k of that token (push all other tokens attention to a single value for each of d_k dim), doing that for all d_k dimensions to form the final representation of the token.
     return value_weighted_sum 
