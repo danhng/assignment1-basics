@@ -18,6 +18,7 @@ from cs336_basics import swiglu
 from cs336_basics import embedding
 from cs336_basics import rope
 from cs336_basics import utils
+from cs336_basics import fast_bpe_bytes
 
 def run_linear(
     d_in: int,
@@ -603,4 +604,5 @@ def run_train_bpe(
                 representing that <token1> was merged with <token2>.
                 Merges are ordered by order of creation.
     """
+    
     raise NotImplementedError

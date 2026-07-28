@@ -58,8 +58,10 @@ class RotaryPositionalEmbedding(torch.nn.Module):
     '''
     def forward(self, x: torch.Tensor, token_positions: torch.Tensor): 
         # token positions: the true token positions - or m, used to multiplied by theta to get the angle. if we don't pass, the model will treat the token pos as 0, 1, .., seq-1. This might not be desirable as token positions might not be like that during inference and when packed multiple sequences.
-        cosines = self.cos_cache_buffer[token_positions] # seq_length, d_k/2
-        sines = self.sine_cache_buffer[token_positions] # seq_length, d_k/2
+        # cosines = self.cos_cache_buffer[token_positions] # seq_length, d_k/2
+        cosines = torch.index_select(self.cos_cache_buffer, dim=-2, index=token_positions) # seq_length, d_k/2
+        # sines = self.sine_cache_buffer[token_positions] # seq_length, d_k/2
+        sines = torch.index_select(self.sine_cache_buffer, dim=-2, index=token_positions) # seq_length, d_k/2
        
         # ex. x = [1, 2, 3, 4]
         x.to(self.device)
