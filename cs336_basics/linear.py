@@ -25,7 +25,6 @@ class Linear(nn.Module):
             std_init_weight = math.sqrt(2/(in_features+out_features))
             nn.init.trunc_normal_(weight, mean=0, std=std_init_weight, a=-3 * std_init_weight, b = 3*std_init_weight)
             self.weight = torch.nn.Parameter(weight)
-            nn.Linear
     
     # x: input tensor of ..., d_model
     def forward(self, x: Tensor): 
