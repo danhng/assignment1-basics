@@ -19,6 +19,7 @@ from cs336_basics import embedding
 from cs336_basics import rope
 from cs336_basics import utils
 from cs336_basics import fast_bpe_bytes
+from cs336_basics import multihead_self_attention
 
 def run_linear(
     d_in: int,
@@ -150,7 +151,8 @@ def run_multihead_self_attention(
         Float[Tensor, " ... sequence_length d_model"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
+    MHA = multihead_self_attention.Multihead_Self_Attention(d_model=d_model, num_heads=num_heads, max_seq_length=None, q_proj_weight=q_proj_weight, k_proj_weight=k_proj_weight, v_proj_weight= v_proj_weight, o_proj_weight=o_proj_weight)
+    return MHA.forward(in_features)
 
 
 def run_multihead_self_attention_with_rope(
@@ -190,7 +192,8 @@ def run_multihead_self_attention_with_rope(
         Float[Tensor, " ... sequence_length d_model"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
+    MHA = multihead_self_attention.Multihead_Self_Attention(d_model=d_model, num_heads=num_heads, max_seq_length=max_seq_len, theta=theta, q_proj_weight=q_proj_weight, k_proj_weight=k_proj_weight, v_proj_weight= v_proj_weight, o_proj_weight=o_proj_weight)
+    return MHA.forward(in_features, token_positions)
 
 
 def run_rope(
