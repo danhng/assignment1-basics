@@ -18,8 +18,7 @@ from cs336_basics import swiglu
 from cs336_basics import embedding
 from cs336_basics import rope
 from cs336_basics import utils
-from cs336_basics import fast_bpe_bytes
-from cs336_basics import multihead_self_attention
+from cs336_basics import multihead_self_attention_layers
 
 def run_linear(
     d_in: int,
@@ -151,7 +150,7 @@ def run_multihead_self_attention(
         Float[Tensor, " ... sequence_length d_model"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    MHA = multihead_self_attention.Multihead_Self_Attention(d_model=d_model, num_heads=num_heads, max_seq_length=None, q_proj_weight=q_proj_weight, k_proj_weight=k_proj_weight, v_proj_weight= v_proj_weight, o_proj_weight=o_proj_weight)
+    MHA = multihead_self_attention_layers.Multihead_Self_Attention_Layers(d_model=d_model, num_heads=num_heads, max_seq_length=None, q_proj_weight=q_proj_weight, k_proj_weight=k_proj_weight, v_proj_weight= v_proj_weight, o_proj_weight=o_proj_weight)
     return MHA.forward(in_features)
 
 
@@ -192,7 +191,7 @@ def run_multihead_self_attention_with_rope(
         Float[Tensor, " ... sequence_length d_model"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    MHA = multihead_self_attention.Multihead_Self_Attention(d_model=d_model, num_heads=num_heads, max_seq_length=max_seq_len, theta=theta, q_proj_weight=q_proj_weight, k_proj_weight=k_proj_weight, v_proj_weight= v_proj_weight, o_proj_weight=o_proj_weight)
+    MHA = multihead_self_attention_layers.Multihead_Self_Attention_Layers(d_model=d_model, num_heads=num_heads, use_rope=True, max_seq_length=max_seq_len, theta=theta, q_proj_weight=q_proj_weight, k_proj_weight=k_proj_weight, v_proj_weight= v_proj_weight, o_proj_weight=o_proj_weight)
     return MHA.forward(in_features, token_positions)
 
 
