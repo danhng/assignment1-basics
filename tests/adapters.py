@@ -38,7 +38,11 @@ def run_linear(
     Returns:
         Float[Tensor, "... d_out"]: The transformed output of your linear module.
     """
-    linear_layer = linear.Linear(d_in, d_out, None, None, weights)
+    linear_layer = linear.Linear(d_in, d_out, dtype=None, device=None, weight=None)
+    state_dict = {
+        'weight': weights
+    }
+    linear_layer.load_state_dict(state_dict)
     return linear_layer.forward(in_features)
     # raise NotImplementedError
 
@@ -95,7 +99,7 @@ def run_swiglu(
     # swiglu.w2.weight.data = w2_weight
     # swiglu.w3.weight.data = w3_weight
     
-    swiglu_ = swiglu.SwiGLU(d_ff, d_model, None, None, w1_weight, w2_weight, w3_weight)
+    swiglu_ = swiglu.SwiGLU_FFN(d_ff, d_model, None, None, w1_weight, w2_weight, w3_weight)
     return swiglu_.forward(in_features)
 
 

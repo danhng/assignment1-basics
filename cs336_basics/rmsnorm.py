@@ -8,12 +8,12 @@ class RMSNorm(torch.nn.Module):
         self.dtype = dtype
         self.device = device
         if weights is None: 
-            gammas = torch.ones((d_model), dtype=dtype, device=device)
-            self.gammas = torch.nn.Parameter(gammas)
+            weight = torch.ones((d_model), dtype=dtype, device=device)
+            self.weight = torch.nn.Parameter(weight) # gamma
         else: 
             weights.to(device)
             weights.to(dtype)
-            self.gammas = torch.nn.Parameter(weights)
+            self.weight = torch.nn.Parameter(weights)
     
     #Process an input tensor of shape (batch_size, sequence_length, d_model) and return a tensor of the same shape.
     def forward(self, x: torch.Tensor):
@@ -21,7 +21,7 @@ class RMSNorm(torch.nn.Module):
         x = x.to(torch.float32)
         r_rms = torch.rsqrt(torch.mean(x ** 2, dim=-1, keepdim=True) + self.eps)
         # x = x.to(x_dtype)
-        x_rms_normed = x * r_rms * self.gammas
+        x_rms_normed = x * r_rms * self.weight
         return x_rms_normed.to(x_dtype)
 
 in_features = torch.Tensor([1, 2, 3])
