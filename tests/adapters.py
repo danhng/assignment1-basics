@@ -19,6 +19,7 @@ from cs336_basics import embedding
 from cs336_basics import rope
 from cs336_basics import utils
 from cs336_basics import multihead_self_attention_layers
+from cs336_basics import transformer_block
 
 def run_linear(
     d_in: int,
@@ -291,8 +292,8 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     """
-    raise NotImplementedError
-
+    transformer = transformer_block.TransformerBlock(d_model, num_heads, d_ff=d_ff, dtype=None, weights=weights, use_rope=True, max_seq_len=max_seq_len, theta=theta)
+    return transformer.forward(in_features)
 
 def run_transformer_lm(
     vocab_size: int,

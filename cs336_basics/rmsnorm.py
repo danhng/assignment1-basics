@@ -24,8 +24,8 @@ class RMSNorm(torch.nn.Module):
         x_rms_normed = x * r_rms * self.weight
         return x_rms_normed.to(x_dtype)
 
-in_features = torch.Tensor([1, 2, 3])
-RMSLayer = RMSNorm(3, 1e-5, None, None)
-print(RMSLayer.forward(in_features))
+# in_features = torch.Tensor([1, 2, 3])
+# RMSLayer = RMSNorm(3, 1e-5, None, None)
+# print(RMSLayer.forward(in_features))
     # raise NotImplementedError
         

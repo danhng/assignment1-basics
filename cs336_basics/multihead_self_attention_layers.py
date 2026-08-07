@@ -43,7 +43,7 @@ class Multihead_Self_Attention_Layers(torch.nn.Module):
         seq_length = x.shape[-2]
         if (self.rope is not None):
             if token_positions is None:
-                token_positions = torch.range(0, seq_length-1) # if token position is not on
+                token_positions = torch.arange(0, seq_length, dtype=torch.int) # if token position is not on
             Q_heads = self.rope.forward(Q_heads, token_positions)
             K_heads = self.rope.forward(K_heads, token_positions)
         # create the mask from triu along the seq_len
