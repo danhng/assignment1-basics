@@ -21,9 +21,9 @@ class SwiGLU_FFN(nn.Module):
         self.d_model = d_model
         self.dtype = dtype
         self.device = device
-        self.w1 = Linear(d_model, d_ff, device, dtype, w1)
-        self.w3 = Linear(d_model, d_ff, device, dtype, w3)
-        self.w2 = Linear(d_ff, d_model, device, dtype, w2)
+        self.w1 = Linear(in_features=d_model, out_features=d_ff, device=device, dtype=dtype, weight=w1)
+        self.w3 = Linear(in_features=d_model, out_features=d_ff, device=device, dtype=dtype, weight=w3)
+        self.w2 = Linear(in_features=d_ff, out_features=d_model, device=device, dtype=dtype, weight=w2)
     
     def forward(self, x): 
         h1 = self.w1.forward(x) # 1, d_model * d_model,d_ff = 1 * d_ff

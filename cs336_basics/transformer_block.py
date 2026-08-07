@@ -35,7 +35,8 @@ class TransformerBlock(nn.Module):
         # ffn = weights["ffn"]
         self.ffn = SwiGLU_FFN(d_model=d_model, d_ff=d_ff, device=device, dtype=dtype)
         # self.ffn.load_state_dict(ffn)
-        self.load_state_dict(weights)
+        if (weights is not None): 
+            self.load_state_dict(weights)
 
     '''
      Returns:
@@ -43,6 +44,7 @@ class TransformerBlock(nn.Module):
         running the Transformer block on the input features while using RoPE.
     '''
     def forward(self, in_features): 
+        print("In feature: ",  in_features.size())
         out_1_rmsnorm = self.ln1.forward(in_features) # rms norm 1
         out_1_mha = self.attn.forward(out_1_rmsnorm) # mha
         out_1 = in_features + out_1_mha # residual connection
@@ -50,10 +52,5 @@ class TransformerBlock(nn.Module):
         out_2_rms_norm = self.ln2.forward(out_1) # rms_norm 2
         out_2_ffn = self.ffn.forward(out_2_rms_norm) # swiglu
         out_2 = out_1 + out_2_ffn # residual connection
+        print("output of Transformer: ", out_2.size())
         return out_2
-          
-        
-        
-        
-        
-        

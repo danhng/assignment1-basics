@@ -20,6 +20,7 @@ from cs336_basics import rope
 from cs336_basics import utils
 from cs336_basics import multihead_self_attention_layers
 from cs336_basics import transformer_block
+from cs336_basics import transformer_lm
 
 def run_linear(
     d_in: int,
@@ -39,7 +40,7 @@ def run_linear(
     Returns:
         Float[Tensor, "... d_out"]: The transformed output of your linear module.
     """
-    linear_layer = linear.Linear(d_in, d_out, dtype=None, device=None, weight=None)
+    linear_layer = linear.Linear(in_features=d_in, out_features=d_out, dtype=None, device=None, weight=None)
     state_dict = {
         'weight': weights
     }
@@ -66,7 +67,7 @@ def run_embedding(
     Returns:
         Float[Tensor, "... d_model"]: Batch of embeddings returned by your Embedding layer.
     """
-    embedding_layer = embedding.Embedding(vocab_size, d_model, None, None, weights)
+    embedding_layer = embedding.TokenEmbedding(vocab_size, d_model, None, None, weights)
     return embedding_layer.forward(token_ids)
 
 
@@ -295,18 +296,7 @@ def run_transformer_block(
     transformer = transformer_block.TransformerBlock(d_model, num_heads, d_ff=d_ff, dtype=None, weights=weights, use_rope=True, max_seq_len=max_seq_len, theta=theta)
     return transformer.forward(in_features)
 
-def run_transformer_lm(
-    vocab_size: int,
-    context_length: int,
-    d_model: int,
-    num_layers: int,
-    num_heads: int,
-    d_ff: int,
-    rope_theta: float,
-    weights: dict[str, Tensor],
-    in_indices: Int[Tensor, " batch_size sequence_length"],
-) -> Float[Tensor, " batch_size sequence_length vocab_size"]:
-    """Given the weights of a Transformer language model and input indices,
+"""Given the weights of a Transformer language model and input indices,
     return the output of running a forward pass on the input indices.
 
     This function should use RoPE.
@@ -373,8 +363,20 @@ def run_transformer_lm(
     Returns:
         Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized
         next-word distribution for each token.
-    """
-    raise NotImplementedError
+    """ 
+def run_transformer_lm(
+    vocab_size: int,
+    context_length: int,
+    d_model: int,
+    num_layers: int,
+    num_heads: int,
+    d_ff: int,
+    rope_theta: float,
+    weights: dict[str, Tensor],
+    in_indices: Int[Tensor, " batch_size sequence_length"],
+) -> Float[Tensor, " batch_size sequence_length vocab_size"]:
+    transformer_model = transformer_lm.Transformer_LM(vocab_size=vocab_size, context_length=context_length, num_layers=num_layers, d_ff=d_ff, dtype=None, use_rope=True, d_model=d_model, num_heads=num_heads, theta=rope_theta, weights=weights)
+    return transformer_model.forward(in_indices)
 
 
 def run_rmsnorm(
