@@ -26,9 +26,9 @@ class SwiGLU_FFN(nn.Module):
         self.w2 = Linear(in_features=d_ff, out_features=d_model, device=device, dtype=dtype, weight=w2)
     
     def forward(self, x): 
-        h1 = self.w1.forward(x) # 1, d_model * d_model,d_ff = 1 * d_ff
+        h1 = self.w1(x) # 1, d_model * d_model,d_ff = 1 * d_ff
         a1 = h1 * sigmoid(h1) # 1 * d_ff 
-        h3 = self.w3.forward(x)  # 1 * d_ff todo: could we do h1 and h3 in parallel
+        h3 = self.w3(x)  # 1 * d_ff todo: could we do h1 and h3 in parallel
         h2 = a1 * h3 # 1 * d_ff
-        a2 = self.w2.forward(h2) # 1,d_ff * d_ff,d_model = 1,d_model
+        a2 = self.w2(h2) # 1,d_ff * d_ff,d_model = 1,d_model
         return a2

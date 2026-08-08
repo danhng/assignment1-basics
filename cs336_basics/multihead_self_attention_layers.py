@@ -30,9 +30,9 @@ class Multihead_Self_Attention_Layers(torch.nn.Module):
         4. Concate h(Qi, Ki, Vi) 
         5. Calcuate multi head attentions Wo(4) 
         '''
-        Q = self.q_proj.forward(x)
-        K = self.k_proj.forward(x)
-        V = self.v_proj.forward(x)
+        Q = self.q_proj(x)
+        K = self.k_proj(x)
+        V = self.v_proj(x)
         
         # divide the d_model by num_heads and transpose num_heads (-2) with seq_length (-3). So we have the seq_len, d_k pair as trailing dimensions. 
         Q_heads = Q.unflatten(dim=-1, sizes=(self.num_heads, int(self.d_model/self.num_heads))).transpose(-2, -3)
@@ -44,8 +44,8 @@ class Multihead_Self_Attention_Layers(torch.nn.Module):
         if (self.rope is not None):
             if token_positions is None:
                 token_positions = torch.arange(0, seq_length, dtype=torch.int) # if token position is not on
-            Q_heads = self.rope.forward(Q_heads, token_positions)
-            K_heads = self.rope.forward(K_heads, token_positions)
+            Q_heads = self.rope(Q_heads, token_positions)
+            K_heads = self.rope(K_heads, token_positions)
         # create the mask from triu along the seq_len
         mask = torch.ones((seq_length, seq_length), dtype=torch.bool)
         mask = torch.tril(mask)
@@ -54,7 +54,7 @@ class Multihead_Self_Attention_Layers(torch.nn.Module):
         # concat attention_heads (... seq_length d_model)
         attention_heads_concat = attention_heads.transpose(-2, -3).flatten(-2, -1)
         # multi_head_self_attention = attention_heads_concat @ self.w_o.mT
-        multi_head_self_attention = self.output_proj.forward(attention_heads_concat)
+        multi_head_self_attention = self.output_proj(attention_heads_concat)
         return multi_head_self_attention
     
 t = torch.Tensor([[1, 2],[3, 4], [5, 6], [7, 8]]) # 4 x 2

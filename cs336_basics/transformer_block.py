@@ -45,12 +45,12 @@ class TransformerBlock(nn.Module):
     '''
     def forward(self, in_features): 
         print("In feature: ",  in_features.size())
-        out_1_rmsnorm = self.ln1.forward(in_features) # rms norm 1
-        out_1_mha = self.attn.forward(out_1_rmsnorm) # mha
+        out_1_rmsnorm = self.ln1(in_features) # rms norm 1
+        out_1_mha = self.attn(out_1_rmsnorm) # mha
         out_1 = in_features + out_1_mha # residual connection
         
-        out_2_rms_norm = self.ln2.forward(out_1) # rms_norm 2
-        out_2_ffn = self.ffn.forward(out_2_rms_norm) # swiglu
+        out_2_rms_norm = self.ln2(out_1) # rms_norm 2
+        out_2_ffn = self.ffn(out_2_rms_norm) # swiglu
         out_2 = out_1 + out_2_ffn # residual connection
         print("output of Transformer: ", out_2.size())
         return out_2
