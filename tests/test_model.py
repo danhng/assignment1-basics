@@ -133,7 +133,7 @@ def test_transformer_lm(
     numpy_snapshot.assert_match(actual_output, atol=1e-4, rtol=1e-2)
 
 
-def test_transformer_slm_truncated_input(
+def test_transformer_lm_truncated_input(
     numpy_snapshot, vocab_size, n_keys, d_model, n_layers, n_heads, d_ff, theta, ts_state_dict, in_indices
 ):
     in_indices_truncated = in_indices[..., : in_indices.shape[-1] // 2]
