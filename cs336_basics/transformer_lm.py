@@ -78,16 +78,3 @@ class Transformer_LM(torch.nn.Module):
         output_lm_head = self.lm_head(output_ln_final) 
         # output_softmax = softmax(output_lm_head, -1)
         return output_lm_head
-        
-        
-        
-        
-        
-        
-        
-                
-        
-        
-        
-        
-        

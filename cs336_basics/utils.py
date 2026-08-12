@@ -1,11 +1,31 @@
 import math
 import torch
 
-def softmax(x: torch.Tensor, dim: int): 
+def softmax(x: torch.Tensor, dim: int, target_indices = None): 
     i_max = torch.max(x, dim=dim, keepdim=True) # max along the dim
     x = x-i_max.values # subtract by max 
-    i_sum_e = torch.sum(torch.exp(x), dim=dim, keepdim=True) # get the sum of e^x
-    return torch.exp(x)/i_sum_e # return the soft max
+    x_e = torch.exp(x)
+    i_sum_e = torch.sum(x_e, dim=dim, keepdim=True) # get the sum of e^x
+    # select only target indices to calculate and return softmaxes for those indices if provided. 
+    if (target_indices is not None):
+        # unsqueeze target indices if not matching x.size
+        if target_indices.size() != x.size(): 
+            target_indices = target_indices[..., None]
+        x_e = torch.gather(x_e, dim, index=target_indices)
+    return x_e/i_sum_e # return the soft max
+
+def log_softmax(x: torch.Tensor, dim: int, target_indices = None): 
+    i_max = torch.max(x, dim=dim, keepdim=True) # max along the dim
+    x_shifted = x-i_max.values # subtract by max 
+    x_e = torch.exp(x_shifted)
+    i_sum_e = torch.sum(x_e, dim=dim, keepdim=True) # get the sum of e^x
+    # select only target indices to calculate and return softmaxes for those indices if provided. 
+    if (target_indices is not None):
+        # unsqueeze target indices if not matching x.size
+        if target_indices.size() != x_shifted.size(): 
+            target_indices = target_indices[..., None]
+        x_shifted = torch.gather(x_shifted, dim, index=target_indices)
+    return x_shifted - torch.log(i_sum_e)
 
 '''
     Q: Float[Tensor, " ... queries d_k"],
@@ -27,7 +47,12 @@ def scaled_dot_product_attention(q, k, v, mask):
     target: Int[Tensor, "... seq_len"]. The token IDs of the ground truth sequence i+1 in the training set. size ..., seq_len
 '''
 def cross_entropy(logits, target): 
-    #1. compute softmaxes of each token position in each sequence (reduce last dimen from vocab to 1) based on target. 
-    #2. compute the probability of each token position based on softmax (transform from softmax to probability)
-    #3. compute compute the total loss of the entire batch, sequence by averaging the sum of probabilities by D and m. (reduce from ... seq_len to 1)
-    pass
+    #1. compute the loss of the ground truth token (reduce dim -1 from vocab to 1)
+    # 1.1. get the logit of the ground truth token
+    # 1.2. get the exp of the logit
+    # 1.3. get the sum of all logits' exp 
+    # 1.4. get the  loss = cross entropy(target_token, predicted prob of target token) = -log(probability(predicted target token)) = -softmax = - (log(exp(ground_truth_token) - log(all logits' exp))
+    #2. compute compute the total loss of the entire batch, sequence by averaging the sum of probabilities by D and m. (reduce from ... seq_len to 1)
+    cross_entropy_inner_tokens = -log_softmax(logits, dim = -1, target_indices=target)
+    cross_entropy_outer = cross_entropy_inner_tokens.mean()
+    return cross_entropy_outer
