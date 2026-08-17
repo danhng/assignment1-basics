@@ -11,8 +11,19 @@ from torch import Tensor
 import sys
 import os
 
+# from cs336_basics import tokenizer
+# from cs336_basics import linear
+# from cs336_basics import rmsnorm
+# from cs336_basics import swiglu
+# from cs336_basics import embedding
+# from cs336_basics import rope
+# from cs336_basics import utils
+# from cs336_basics import multihead_self_attention_layers
+# from cs336_basics import transformer_block
+# from cs336_basics import transformer_lm
+# from cs336_basics import adam_w
+
 import cs336_basics
-import cs336_basics.adam_w
 
 def run_linear(
     d_in: int,
@@ -574,7 +585,7 @@ def get_tokenizer(
     Returns:
         A BPE tokenizer that uses the provided vocab, merges, and special tokens.
     """
-    return tokenizer.FastTokenizer(vocab, merges, special_tokens)
+    return cs336_basics.tokenizer.FastTokenizer(vocab, merges, special_tokens)
 
 
 def run_train_bpe(

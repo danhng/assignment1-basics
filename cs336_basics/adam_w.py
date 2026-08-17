@@ -2,6 +2,7 @@ import torch.optim as optim
 from collections.abc import Callable, Iterable
 from typing import Optional
 import math
+import torch
 
 class AdamW(optim.Optimizer): 
     
@@ -53,14 +54,14 @@ class AdamW(optim.Optimizer):
 
                 # step 4. Second moment (Square)
                 v_past = state.get("v", 0)
-                g_raw_square = math.pow(g_raw, 2)
+                g_raw_square = torch.pow(g_raw, 2)
                 v_next = beta_v*v_past + (1-beta_v)*g_raw_square
                 
                 # step 5. weight decay
-                weight_decay = lr_warm_up * weight_decay_rate * param.data
+                weight_decay = lr * weight_decay_rate * param.data # note: weight_decay should not have anything todo with warmup, just a L2 Loss (depends solely on the weight magnitude)
                 
                 # step 6. final param update: w_next = w_past - lr_warm_up*m_next/(sqrt(v_next) + epsilon) - weight_decay
-                param.data -= weight_decay + g_raw * m_next/(math.sqrt(v_next) + eps)
+                param.data -= weight_decay + lr_warm_up * m_next/(torch.sqrt(v_next) + eps)
                 
                 # step 7. update states:
                 state["step"] = step + 1
