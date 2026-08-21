@@ -68,5 +68,28 @@ def cosine_annealing_lr(t, lr_max, lr_min, T_w, T_c):
     if t > T_c: 
         return lr_min
     return lr_min + 1/2*(lr_max-lr_min)*(1+math.cos(math.pi * (t-T_w)/(T_c - T_w)))
+
+'''
+Given the gradient (for all parameters) g, we compute its l2-norm ‖g‖2. 
+If this norm is less than a maximum value M, then we leave g as is; 
+otherwise, we scale g down by a factor of M/(‖g‖_2 + eps) (where a small eps, like e10-6, is added for numeric stability). Note that the resulting norm will be just under M.
+'''
+def gradient_clipping(parameters, max_l2_norm, eps = 1e-6): 
+    # filter out non grad params
+    grads = [p.grad for p in parameters if p.grad is not None]
     
+    # calculate the total norm by 2 step. 
+    # step 1. calculate the L2 norm of each grad
+    # step 2. stack each grad's L2 norm to a vector and calculate the L2 norm of that vector
+    total_norm = torch.linalg.vector_norm(
+        torch.stack([torch.linalg.vector_norm(grad) for grad in grads])
+    )
+    # calculate the clipping rate
+    clipping_rate = max_l2_norm / (total_norm+eps)
     
+     # limit the coef to 1 to achieve both cases (total_norm < M and total_norm > M) in one coef
+    clipping_rate_coef = torch.clamp_max(clipping_rate, 1)
+    
+    # foreach mul for better performance than for loop (fused kernel)
+    torch._foreach_mul_(grads, clipping_rate_coef)
+    return total_norm
