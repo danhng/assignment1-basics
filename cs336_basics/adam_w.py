@@ -49,11 +49,11 @@ class AdamW(optim.Optimizer):
                 g_raw = param.grad.data
                 
                 # step 3. First moment
-                m_past = state.get("m", 0)
+                m_past = state.get("m", 0) # optimizer state memory
                 m_next = g_raw*(1-beta_m)+m_past*beta_m
-
+ 
                 # step 4. Second moment (Square)
-                v_past = state.get("v", 0)
+                v_past = state.get("v", 0) # optimizer state memory
                 g_raw_square = torch.pow(g_raw, 2)
                 v_next = beta_v*v_past + (1-beta_v)*g_raw_square
                 
