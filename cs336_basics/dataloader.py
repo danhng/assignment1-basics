@@ -20,3 +20,6 @@ def get_batch(x, batch_size, context_length, device):
     inputs = torch.from_numpy(x[full_batch_indices_sample]).to(device=device, dtype=torch.long)
     targets = torch.from_numpy(x[full_batch_indices_target]).to(device=device, dtype=torch.long)
     return (inputs, targets)
+
+
+     
