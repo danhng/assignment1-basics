@@ -1,4 +1,7 @@
 import torch 
+from .tokenizer import FastTokenizer
+from .transformer_lm import Transformer_LM
+from .adam_w import AdamW
 
 """
 Input: 
@@ -25,6 +28,16 @@ def train_llm(tokenizer_vocab_file, tokenizer_merges_file, tokenizer_special_tok
                 clip gradients
                 optimize weights using moment, rmsprop, weight decay
             update the lr using cosine annealing
-    -
     """
+    
+    #Step 1: Construct the tokenizer
+    tokenizer = FastTokenizer.from_files(vocab_filepath=tokenizer_vocab_file, merges_filepath=tokenizer_merges_file, special_tokens=tokenizer_special_tokens)
+    model = Transformer_LM(vocab_size=tokenizer_vocab_size, context_length=model_context_length, num_layers=model_num_transformer_blocks, 
+                           num_heads=model_num_mha_heads, d_ff=model_d_ff, dtype=model_dtype_weight, 
+                           device=model_device, weights=None, use_rope=model_rope_use_rope, theta=model_rope_theta, d_model=model_d_model)
+    optimizer = AdamW(model.parameters(), lr=optim_lr_max,weight_decay=optim_weight_decay,betas=optim_betas,eps=optim_betas)
+    
+    
+    
+    pass
     

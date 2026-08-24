@@ -41,8 +41,9 @@ class Transformer_LM(torch.nn.Module):
         # weight: vocab_size, d_model
         # output: seq_len, vocab_size (output probablity)
         self.lm_head = Linear(in_features=d_model, out_features=vocab_size, device=device, dtype=dtype)
-        self.load_state_dict(weights)
-        self._verify_weights(weights)
+        if weights is not None: 
+            self.load_state_dict(weights)
+            self._verify_weights(weights)
         
         
     def _verify_weights(self, weights):
