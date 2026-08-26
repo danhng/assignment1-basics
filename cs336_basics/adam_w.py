@@ -28,7 +28,9 @@ class AdamW(optim.Optimizer):
         defaults = {"lr": lr, "betas": betas, "eps":eps, "weight_decay": weight_decay}
         super().__init__(params=param_groups, defaults=defaults)
     
-        
+    def get_lr(self): 
+        return [param_group['lr'] for param_group in self.param_groups]
+    
     def step(self, closure: Optional[Callable] = None):
         loss = None if closure is None else closure()
         for param_group in self.param_groups: 
