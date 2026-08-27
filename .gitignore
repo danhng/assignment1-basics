@@ -164,3 +164,5 @@ cython_debug/
 
 **/log/
 data/
+
+cs336_basics/training_config.toml
