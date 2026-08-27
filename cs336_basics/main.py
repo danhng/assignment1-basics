@@ -1,5 +1,6 @@
 import numpy as np
 import logging
+from cs336_basics.fast_bpe_bytes import run_train_bpe
 from cs336_basics.tokenizer import FastTokenizer
 import linear
 
@@ -20,15 +21,15 @@ def testTokenizer():
     specialTokens = []
     dataset = "test.txt"
     dataset = "TinyStoriesV2-GPT4-train.txt"
-    # vocab, merges = run_train_bpe(f"assignment1-basics/data/{dataset}", 
-    #             output_path=f"assignment1-basics/data/output/{dataset}", 
-    #             vocab_size=10000, special_tokens=specialTokens, split_text_token=splitTextToken, 
+    # vocab, merges = run_train_bpe(f"data/{dataset}", 
+    #             output_path=f"data/output/{dataset}", 
+    #             vocab_size=10048, special_tokens=specialTokens, split_text_token=splitTextToken, 
     #             chunk_size_to_process=100*1024*1024, 
-    #             get_max_by_cache=True, get_init_multi_process=True, process_count = 4, outputMergeJson=False)
+    #             get_max_by_cache=True, get_init_multi_process=True, process_count = 4, output_merges_json=False)
   
     datasetEncode = "tinystories_sample_5M.txt"
-    vocabPath = "data/output/TinyStoriesV2-GPT4-train.txt-bytes-cTrue-4-10000-260703145356-219.7-vocab.json"
-    mergesPath = "data/output/TinyStoriesV2-GPT4-train.txt-bytes-cTrue-4-10000-260703145356-219.7-merges.json"
+    vocabPath = "data/output/TinyStoriesV2-GPT4-train.txt-bytes-cTrue-4-10048-260827220216-211.0-vocab.json"
+    mergesPath = "data/output/TinyStoriesV2-GPT4-train.txt-bytes-cTrue-4-10048-260827220216-211.0-merges.json"
     tokenizerr = FastTokenizer.from_files(vocab_filepath=vocabPath, merges_filepath=mergesPath, special_tokens=[splitTextToken], vocab_file_json=False)
     tokenizerr.serialize_encode(f"data/{datasetEncode}", f"data/output/{datasetEncode}-encoded.npy")
 

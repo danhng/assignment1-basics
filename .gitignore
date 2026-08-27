@@ -166,3 +166,5 @@ cython_debug/
 data/
 
 cs336_basics/training_config.toml
+mlflow.db
+mlruns/

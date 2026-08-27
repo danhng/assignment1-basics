@@ -405,7 +405,7 @@ def run_train_bpe(
     get_max_by_cache = True,
     get_init_multi_process = True,
     process_count = 1,
-    outputMergeJson = True,
+    output_merges_json = False,
     **kwargs,
 ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
     start_time = time.perf_counter()
@@ -464,7 +464,7 @@ def run_train_bpe(
         # Write merge file
         fileNameMerges = f"{output_path}-bytes-c{get_max_by_cache}-{get_init_multi_process*process_count}-{vocab_size}-{string_format}-{elapsed_time3:.1f}-merges.json"
         serializeMerges = []
-        if outputMergeJson:
+        if output_merges_json:
             for merge in merges: 
                 serializeMerges.append(tuple([pair for pair in merge]))
             with open(fileNameMerges, "w") as f:

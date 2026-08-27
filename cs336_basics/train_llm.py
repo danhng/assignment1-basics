@@ -1,5 +1,6 @@
 from datetime import datetime
 import math
+import mlflow
 import numpy as np
 import torch
 from tqdm import tqdm
@@ -21,6 +22,9 @@ STATE_DICT_MODEL_STATE = 'model'
 STATE_DICT_OPTIM_STATE = 'optim'
 STATE_DICT_TRAINING_STATE = 'training_state'
 STATE_DICT_TRAINING_CONFIG = 'training_config'
+
+mlflow.set_tracking_uri("sqlite:///mlflow.db")
+mlflow.set_experiment("X75_Trainer")
 
 """
 Input: 
@@ -119,10 +123,8 @@ class X75_Trainer():
         trainer.training_state = checkpoint[STATE_DICT_TRAINING_STATE]
         return trainer
     
-    def _get_checkpoint_name(self): 
-        now = datetime.now()
-        string_format = now.strftime("%y%m%d%H%M%S")
-        return self.training_config.training_checkpoint_path + f"{hash(str(self))}-{string_format}-{self.training_state.current_iteration}.pt"        
+    def _get_checkpoint_name(self, time): 
+        return self.training_config.training_checkpoint_path + f"{hash(str(self))}-{time}-{self.training_state.current_iteration}.pt"        
 
     """
     Train the model
@@ -131,6 +133,7 @@ class X75_Trainer():
         
     """
     def train_llm(self, training_tokens):
+        mlflow.enable_system_metrics_logging()
         """
             1. construct the tokenizer 
             2. construct the model 
@@ -145,7 +148,9 @@ class X75_Trainer():
                         optimize weights using moment, rmsprop, weight decay
                     update the lr using cosine annealing
             """
-
+        now = datetime.now()
+        time = now.strftime("%y%m%d%H%M%S")
+        
         # Step 1: Construct the tokenizer
         # training loop
         current_iteration = self.training_state.current_iteration
@@ -171,44 +176,47 @@ class X75_Trainer():
             loss.backward() # Run backward pass, which computes gradients.
             opt.step() # Run optimizer step.
         """
-        for current_iteration in tqdm(range(current_iteration, self.training_config.training_max_iterations + 1), desc="Training"):
-            inputs, targets = get_batch(training_tokens, self.training_config.training_batch_size, self.training_config.model_context_length, self.training_config.model_device) # move input and target to device
-            logger.info(f"Step {current_iteration}, loaded inputs, targets of size: {inputs.shape}")
-            self.model.zero_grad() # reset gradients of all parameters before calculating
-            logits = self.model(inputs) # model forward pass
-            # logger.info(f"Forward pass result size  {logits.shape}")
-            validation_loss = cross_entropy(logits=logits, target=targets) # loss calculation
-            validation_loss.backward() # model backward pass
-            self.optimizer.step() # optimize the weights
-            self.lr_scheduler.step() # step the scheduler to update the lr 
-            
-            # gemini added 
-            current_lr = self.optimizer.get_lr()
-            if isinstance(current_lr, list):
-                current_lr = current_lr[0]
-            tracked_iterations.append(current_iteration)
-            tracked_losses.append(validation_loss.item()) # Use .item() to detach tensor and save memory
-            tracked_lrs.append(current_lr)
-            
-            # update state after each iteration
-            self.training_state.current_iteration = current_iteration + 1
-            self.training_state.validation_loss = validation_loss
-            self.training_state.tokens_trained = tokens_trained + inputs.numel()
-            logger.info(f"After step {current_iteration}, tokens trained: {self.training_state.tokens_trained}, lr: {self.optimizer.get_lr()}, loss: {validation_loss}")
+        with mlflow.start_run():
+            mlflow.log_params(self.training_config.__dict__)
+            for current_iteration in tqdm(range(current_iteration, self.training_config.training_max_iterations + 1), desc="Training"):
+                inputs, targets = get_batch(training_tokens, self.training_config.training_batch_size, self.training_config.model_context_length, self.training_config.model_device) # move input and target to device
+                logger.info(f"Step {current_iteration}, loaded inputs, targets of size: {inputs.shape}")
+                self.model.zero_grad() # reset gradients of all parameters before calculating
+                logits = self.model(inputs) # model forward pass
+                # logger.info(f"Forward pass result size  {logits.shape}")
+                validation_loss = cross_entropy(logits=logits, target=targets) # loss calculation
+                validation_loss.backward() # model backward pass
+                self.optimizer.step() # optimize the weights
+                self.lr_scheduler.step() # step the scheduler to update the lr 
+                
+                # gemini added 
+                current_lr = self.optimizer.get_lr()
+                if isinstance(current_lr, list):
+                    current_lr = current_lr[0]
+                tracked_iterations.append(current_iteration)
+                tracked_losses.append(validation_loss.item()) # Use .item() to detach tensor and save memory
+                tracked_lrs.append(current_lr)
+                
+                # update state after each iteration
+                self.training_state.current_iteration = current_iteration + 1
+                self.training_state.validation_loss = validation_loss
+                self.training_state.current_tokens_processed = self.training_state.current_tokens_processed + inputs.numel()
+                logger.info(f"After step {current_iteration}, tokens trained: {self.training_state.current_tokens_processed}, lr: {self.optimizer.get_lr()}, loss: {validation_loss}")
 
-            #checkpointing
-            if (current_iteration % self.training_config.training_checkpoint_every_x_iter == 0): 
-                path = self._get_checkpoint_name()
-                self.save_checkpoint(path)
-                logger.info(f"saved to save checkpoint: {path}")
-            
-            # --- ADDED: Plotting logic after the loop finishes ---
-            self._plot_training_metrics(tracked_iterations, tracked_losses, tracked_lrs)
-            # -----------------------------------------------------
-            
+                #checkpointing
+                if (current_iteration % self.training_config.training_checkpoint_every_x_iter == 0): 
+                    path = self._get_checkpoint_name(time=time)
+                    self.save_checkpoint(path)
+                    logger.info(f"saved to save checkpoint: {path}")
+                
+                # --- ADDED: Plotting logic after the loop finishes ---
+                self._plot_training_metrics(tracked_iterations, tracked_losses, tracked_lrs, time)
+                # -----------------------------------------------------
+                mlflow.log_metric("loss", validation_loss, step=current_iteration)
+        mlflow.pytorch.log_model(self.model, name="model", serialization_format="pickle")
                 
     # Add this as a helper method in your class
-    def _plot_training_metrics(self, iterations, losses, lrs):
+    def _plot_training_metrics(self, iterations, losses, lrs, time):
         """Generates and saves a two-panel plot for Loss and Learning Rate."""
         plt.figure(figsize=(14, 5))
 
@@ -231,12 +239,13 @@ class X75_Trainer():
         plt.legend()
 
         plt.tight_layout()
-        plt.savefig("training_metrics.png", dpi=300)
+        plt.savefig(f"data/{hash(str(self))}-{time}.png", dpi=300)
         logger.info("Saved training plots to training_metrics.png")
         # plt.show() # Uncomment if running in an interactive notebook/environmen
 
 ## Training script
 if __name__ == '__main__':
+    mlflow.enable_system_metrics_logging()
     # translate the training text to binary token file
     # tokenizer = FastTokenizer.from_files(vocab_filepath=)
     # Open the file in binary mode ("rb")
