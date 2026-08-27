@@ -1,9 +1,12 @@
 import torch
-from .embedding import TokenEmbedding
-from .transformer_block import TransformerBlock
-from .transformer_block import RMSNorm
-from .linear import Linear
-from .utils import softmax
+from cs336_basics.embedding import TokenEmbedding
+from cs336_basics.transformer_block import TransformerBlock
+from cs336_basics.transformer_block import RMSNorm
+from cs336_basics.linear import Linear
+from cs336_basics.utils import softmax
+
+import logging
+logger = logging.getLogger('Transformer_LM')
 
 '''
 Token Embedding 
@@ -29,7 +32,7 @@ class Transformer_LM(torch.nn.Module):
         
         # input: seq_len, d_model
         # output: seq_len, d_model
-        layers = [TransformerBlock(d_model=d_model, num_heads=num_heads, d_ff=d_ff, dtype=dtype, device=device, weights=None, use_rope=use_rope, max_seq_len=context_length, theta=theta) for _ in range(num_layers)]
+        layers = [TransformerBlock(block_index=i, d_model=d_model, num_heads=num_heads, d_ff=d_ff, dtype=dtype, device=device, weights=None, use_rope=use_rope, max_seq_len=context_length, theta=theta) for i in range(num_layers)]
         self.layers = torch.nn.ModuleList(layers)
         self.num_layers = num_layers
         
@@ -44,7 +47,7 @@ class Transformer_LM(torch.nn.Module):
         if weights is not None: 
             self.load_state_dict(weights)
             self._verify_weights(weights)
-        
+        logger.info(f"Model architecture: {self}")
         
     def _verify_weights(self, weights):
         """Helper method to dynamically verify weights without hardcoding layers."""
@@ -69,8 +72,6 @@ class Transformer_LM(torch.nn.Module):
         print("assert ends")
     
     def forward(self, in_indices): 
-        print("Model architecture:", self)
-        print("Input size:", in_indices.size())
         output_token_embeddings = self.token_embeddings(in_indices)
         output_transformer_block = output_token_embeddings
         for layer in self.layers: 

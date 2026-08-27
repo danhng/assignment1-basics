@@ -1,0 +1,29 @@
+tokenizer_vocab_file = "data/output/TinyStoriesV2-GPT4-train.txt-bytes-cTrue-4-10000-260703145356-219.7-vocab.json"
+tokenizer_merges_file = "data/output/TinyStoriesV2-GPT4-train.txt-bytes-cTrue-4-10000-260703145356-219.7-merges.json"
+tokenizer_special_tokens = ["<|endoftext|>"]
+
+model_context_length=256
+model_num_transformer_blocks=4
+model_num_mha_heads=4
+model_d_ff=1024
+model_d_model=384
+model_dtype_weight="float32"
+model_device="mps"
+model_rope_use_rope=true
+model_rope_theta=10000
+
+optim_lr_max=1e-3
+optim_weight_decay=1e-1
+optim_betas=[0.9, 0.999]
+optim_eps=1e-8
+optim_lr_min=1e-4
+optim_lr_cosine_ratio=0.95
+optim_lr_warmup_ratio=0.05
+optim_gradient_clipping_enable=true
+optim_gradient_clipping_max_l2_norm=1
+
+training_batch_size=10
+training_checkpoint_every_x_iter=10
+training_max_iterations=200
+training_use_chincilla_law=false
+training_checkpoint_path="data/checkpoint/"

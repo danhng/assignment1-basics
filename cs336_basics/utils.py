@@ -58,18 +58,6 @@ def cross_entropy(logits, target):
     return cross_entropy_outer
 
 '''
-The cosine annealing learning rate schedule takes (i) the current iteration t, (ii) the maximum learningrate lr_max, the minimum (final) learning rate lr_min, 
-the number of warm-up iterations T_w, and the final iteration of cosine annealing T_c. 
-'''
-def cosine_annealing_lr(t, lr_max, lr_min, T_w, T_c): 
-    assert T_w <= T_c and t >= 0
-    if t < T_w: 
-        return t/T_w * lr_max
-    if t > T_c: 
-        return lr_min
-    return lr_min + 1/2*(lr_max-lr_min)*(1+math.cos(math.pi * (t-T_w)/(T_c - T_w)))
-
-'''
 Given the gradient (for all parameters) g, we compute its l2-norm ‖g‖2. 
 If this norm is less than a maximum value M, then we leave g as is; 
 otherwise, we scale g down by a factor of M/(‖g‖_2 + eps) (where a small eps, like e10-6, is added for numeric stability). Note that the resulting norm will be just under M.

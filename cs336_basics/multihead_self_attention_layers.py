@@ -17,6 +17,7 @@ class Multihead_Self_Attention_Layers(torch.nn.Module):
         self.num_heads = num_heads
         self.d_model = d_model
         self.rope = None
+        self.device = device
         if use_rope:
             self.max_seq_length = max_seq_length
             self.rope = RotaryPositionalEmbedding(theta, int(d_model/num_heads), max_seq_length, device) # rope is applied per head so d_k of rope = d_model/num_heads
@@ -47,7 +48,7 @@ class Multihead_Self_Attention_Layers(torch.nn.Module):
             Q_heads = self.rope(Q_heads, token_positions)
             K_heads = self.rope(K_heads, token_positions)
         # create the mask from triu along the seq_len
-        mask = torch.ones((seq_length, seq_length), dtype=torch.bool)
+        mask = torch.ones((seq_length, seq_length), dtype=torch.bool, device=self.device)
         mask = torch.tril(mask)
 
         attention_heads = scaled_dot_product_attention(Q_heads, K_heads, V_heads, mask)

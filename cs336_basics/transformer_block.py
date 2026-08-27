@@ -3,6 +3,10 @@ from .multihead_self_attention_layers import Multihead_Self_Attention_Layers
 from .rmsnorm import RMSNorm
 from .swiglu import SwiGLU_FFN
 
+import logging
+logger = logging.getLogger('TransformerBlock')
+
+
 '''
 Let's begin by assembling the Transformer block (it will be helpful to refer back to Figure 2). A 
 Transformer block contains two 'sub-layers', one for the multihead self attention, and another for the 
@@ -14,7 +18,7 @@ following set of updates to produce an output y from an input x,
 y = x + MultiHeadSelfAttention(RMSNorm(x))
 '''
 class TransformerBlock(nn.Module): 
-    def __init__(self, d_model, num_heads, d_ff, dtype=None, device=None, weights = None, use_rope = False, max_seq_len = 4096, theta = 10000): 
+    def __init__(self, block_index, d_model, num_heads, d_ff, dtype=None, device=None, weights = None, use_rope = False, max_seq_len = 4096, theta = 10000): 
         super().__init__()
         # First half
         # LayerNorm1
@@ -37,14 +41,17 @@ class TransformerBlock(nn.Module):
         # self.ffn.load_state_dict(ffn)
         if (weights is not None): 
             self.load_state_dict(weights)
+        self.block_index = block_index
 
+    def get_block_index(self):
+        return self.block_index
     '''
      Returns:
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     '''
     def forward(self, in_features): 
-        print("In feature: ",  in_features.size())
+        logger.debug(f"Transformer Block{self.block_index}: In feature: {in_features.size()}" )
         out_1_rmsnorm = self.ln1(in_features) # rms norm 1
         out_1_mha = self.attn(out_1_rmsnorm) # mha
         out_1 = in_features + out_1_mha # residual connection
@@ -52,5 +59,5 @@ class TransformerBlock(nn.Module):
         out_2_rms_norm = self.ln2(out_1) # rms_norm 2
         out_2_ffn = self.ffn(out_2_rms_norm) # swiglu
         out_2 = out_1 + out_2_ffn # residual connection
-        print("output of Transformer: ", out_2.size())
+        logger.debug(f"Transformer Block{self.block_index}: output size:  {out_2.size()}")
         return out_2

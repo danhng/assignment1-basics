@@ -1,18 +1,20 @@
-import datetime
+from datetime import datetime
 import math
+import numpy as np
 import torch
-import tqdm
-from .tokenizer import FastTokenizer
-from .transformer_lm import Transformer_LM
-from .adam_w import AdamW
+from tqdm import tqdm
+from cs336_basics.tokenizer import FastTokenizer
+from cs336_basics.transformer_lm import Transformer_LM
+from cs336_basics.adam_w import AdamW
 from types import SimpleNamespace
-from .checkpoint import SimpleNamespace
-from .dataloader import get_batch
-from .utils import cross_entropy
-from .utils import cosine_annealing_lr
+from cs336_basics.dataloader import get_batch
+from cs336_basics.utils import cross_entropy
+from cs336_basics.cosine_annealing_lr import CosineAnnealingLR
+import tomllib
+import matplotlib.pyplot as plt
 
 import logging
-logging.basicConfig(level=logging.WARNING)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('train_llm')
 
 STATE_DICT_MODEL_STATE = 'model'
@@ -54,7 +56,7 @@ class X75_Trainer():
         self.training_config.tokenizer_vocab_file = kwargs.get('tokenizer_vocab_file')
         self.training_config.tokenizer_merges_file = kwargs.get('tokenizer_merges_file')
         self.training_config.tokenizer_special_tokens = kwargs.get('tokenizer_special_tokens')
-        self.training_config.tokenizer_vocab_size = kwargs.get('tokenizer_vocab_size')
+        # self.training_config.tokenizer_vocab_size = kwargs.get('tokenizer_vocab_size')
         
         #MODEL HYPER PARAMS
         self.training_config.model_context_length = kwargs.get('model_context_length')
@@ -62,23 +64,23 @@ class X75_Trainer():
         self.training_config.model_num_mha_heads = kwargs.get('model_num_mha_heads')
         self.training_config.model_d_ff = kwargs.get('model_d_ff')
         self.training_config.model_d_model = kwargs.get('model_d_model')
-        self.training_config.model_dtype_weight = kwargs.get('model_dtype_weight')
-        self.training_config.model_device = kwargs.get('model_device')
+        self.training_config.model_dtype_weight = getattr(torch, kwargs.get('model_dtype_weight','float32'))
+        self.training_config.model_device = torch.device(kwargs.get('model_device'))
         self.training_config.model_rope_use_rope = kwargs.get('model_rope_use_rope', True)
-        self.training_config.model_rope_theta = kwargs.get('model_rope_theta')
+        self.training_config.model_rope_theta = kwargs.get('model_rope_theta', 10000)
         
-        self.training_config.optim_lr_max = kwargs.get('optim_lr_max')
-        self.training_config.optim_weight_decay = kwargs.get('optim_weight_decay')
-        self.training_config.optim_betas = kwargs.get('optim_betas')
-        self.training_config.optim_eps = kwargs.get('optim_eps')
-        self.training_config.optim_lr_min = kwargs.get('optim_lr_min')
-        self.training_config.optim_lr_cosine_end_ratio = kwargs.get('optim_lr_cosine_end_ratio')
-        self.training_config.optim_gradient_clipping_on = kwargs.get('optim_gradient_clipping_on')
-        self.training_config.optim_iter_warmup_end_ratio = kwargs.get('optim_iter_warmup_end_ratio')
-        self.training_config.optim_gradient_clipping_max_l2_norm = kwargs.get('optim_gradient_clipping_max_l2_norm')
+        self.training_config.optim_lr_max = kwargs.get('optim_lr_max', 1e-3)
+        self.training_config.optim_weight_decay = kwargs.get('optim_weight_decay', 1e-1)
+        self.training_config.optim_betas = tuple(kwargs.get('optim_betas', (0.9, 0.999)))
+        self.training_config.optim_eps = kwargs.get('optim_eps', 1e-8)
+        self.training_config.optim_lr_min = kwargs.get('optim_lr_min',0)
+        self.training_config.optim_lr_cosine_ratio = kwargs.get('optim_lr_cosine_ratio', 1)
+        self.training_config.optim_gradient_clipping_enable = kwargs.get('optim_gradient_clipping_enable', True)
+        self.training_config.optim_lr_warmup_ratio = kwargs.get('optim_lr_warmup_ratio', 0.05)
+        self.training_config.optim_gradient_clipping_max_l2_norm = kwargs.get('optim_gradient_clipping_max_l2_norm', 1)
         
-        self.training_config.training_batch_size = kwargs.get('training_batch_size')
-        self.training_config.training_checkpoint_every_x_iter = kwargs.get('training_checkpoint_every_x_iter')
+        self.training_config.training_batch_size = kwargs.get('training_batch_size',1)
+        self.training_config.training_checkpoint_every_x_iter = kwargs.get('training_checkpoint_every_x_iter',1000)
         self.training_config.training_max_iterations = kwargs.get('training_max_iterations')
         self.training_config.training_use_chincilla_law = kwargs.get('training_use_chincilla_law')
         self.training_config.training_chincilla_token_param_ratio = kwargs.get('training_chincilla_token_param_ratio')
@@ -91,20 +93,23 @@ class X75_Trainer():
         
         # model, optim, tokenizer
         self.tokenizer = FastTokenizer.from_files(vocab_filepath=self.training_config.tokenizer_vocab_file, merges_filepath=self.training_config.tokenizer_merges_file, special_tokens=self.training_config.tokenizer_special_tokens)
-        self.model = Transformer_LM(vocab_size=self.training_config.tokenizer_vocab_size, context_length=self.training_config.model_context_length, num_layers=self.training_config.model_num_transformer_blocks,
+        self.model = Transformer_LM(vocab_size=self.tokenizer.get_vocab_size(), context_length=self.training_config.model_context_length, num_layers=self.training_config.model_num_transformer_blocks,
                             num_heads=self.training_config.model_num_mha_heads, d_ff=self.training_config.model_d_ff, dtype=self.training_config.model_dtype_weight,
                             device=self.training_config.model_device, weights=None, use_rope=self.training_config.model_rope_use_rope, theta=self.training_config.model_rope_theta, d_model=self.training_config.model_d_model)
         self.optimizer = AdamW(self.model.parameters(), lr=self.training_config.optim_lr_max,
-                        weight_decay=self.training_config.optim_weight_decay, betas=self.training_config.optim_betas, eps=self.training_config.optim_betas)
-        
-    
+                        weight_decay=self.training_config.optim_weight_decay, betas=self.training_config.optim_betas, eps=self.training_config.optim_eps)
+        # todo scheduler
+        self.lr_scheduler = CosineAnnealingLR(optimizer=self.optimizer, max_iters=self.training_config.training_max_iterations, 
+                                              warmup_iter_ratio=self.training_config.optim_lr_warmup_ratio, 
+                                            cosine_iter_ratio=self.training_config.optim_lr_cosine_ratio, 
+                                            lr_min=self.training_config.optim_lr_min)
     """
     Load a checkpoint from src (path or file-likeobject), and then recover the model and optimizer states from that checkpoint. 
     Your function should return the iteration number that was saved to the checkpoint. You can use torch.load(src) to recover what you saved in your save_checkpoint implementation, and the
     load_state_dict method in both the model and optimizer to return them to their previous states
     """
     @classmethod
-    def load_model_from_file(src): 
+    def load_model_from_file(cls, src): 
         # Load the checkpoint dictionary
         checkpoint = torch.load(src)
         trainer = X75_Trainer(checkpoint[STATE_DICT_TRAINING_CONFIG])
@@ -117,7 +122,7 @@ class X75_Trainer():
     def _get_checkpoint_name(self): 
         now = datetime.now()
         string_format = now.strftime("%y%m%d%H%M%S")
-        return f"{hash(str(self))}-{string_format}-{self.self.training_state.current_iteration}.pt"        
+        return self.training_config.training_checkpoint_path + f"{hash(str(self))}-{string_format}-{self.training_state.current_iteration}.pt"        
 
     """
     Train the model
@@ -146,7 +151,13 @@ class X75_Trainer():
         current_iteration = self.training_state.current_iteration
         validation_loss = self.training_state.current_validation_loss
         total_params = sum(p.numel() for p in self.model.parameters())
+        logger.info(f"Model params: {total_params}")
         tokens_trained = self.training_state.current_tokens_processed
+        
+        # --- ADDED: Lists to track metrics for plotting ---
+        tracked_iterations = []
+        tracked_losses = []
+        tracked_lrs = []
         
         # todo: validate the training tokens passed is the one used in the checkpoint. 
 
@@ -163,29 +174,78 @@ class X75_Trainer():
         for current_iteration in tqdm(range(current_iteration, self.training_config.training_max_iterations + 1), desc="Training"):
             inputs, targets = get_batch(training_tokens, self.training_config.training_batch_size, self.training_config.model_context_length, self.training_config.model_device) # move input and target to device
             logger.info(f"Step {current_iteration}, loaded inputs, targets of size: {inputs.shape}")
-            
             self.model.zero_grad() # reset gradients of all parameters before calculating
             logits = self.model(inputs) # model forward pass
+            # logger.info(f"Forward pass result size  {logits.shape}")
             validation_loss = cross_entropy(logits=logits, target=targets) # loss calculation
             validation_loss.backward() # model backward pass
             self.optimizer.step() # optimize the weights
+            self.lr_scheduler.step() # step the scheduler to update the lr 
+            
+            # gemini added 
+            current_lr = self.optimizer.get_lr()
+            if isinstance(current_lr, list):
+                current_lr = current_lr[0]
+            tracked_iterations.append(current_iteration)
+            tracked_losses.append(validation_loss.item()) # Use .item() to detach tensor and save memory
+            tracked_lrs.append(current_lr)
             
             # update state after each iteration
             self.training_state.current_iteration = current_iteration + 1
             self.training_state.validation_loss = validation_loss
             self.training_state.tokens_trained = tokens_trained + inputs.numel()
-            logger.info(f"After step {current_iteration}, tokens trained: {self.training_state.tokens_trained}, lr: {self.optimizer.get_lr}, loss: {validation_loss}")
+            logger.info(f"After step {current_iteration}, tokens trained: {self.training_state.tokens_trained}, lr: {self.optimizer.get_lr()}, loss: {validation_loss}")
 
             #checkpointing
             if (current_iteration % self.training_config.training_checkpoint_every_x_iter == 0): 
                 path = self._get_checkpoint_name()
                 self.save_checkpoint(path)
                 logger.info(f"saved to save checkpoint: {path}")
+            
+            # --- ADDED: Plotting logic after the loop finishes ---
+            self._plot_training_metrics(tracked_iterations, tracked_losses, tracked_lrs)
+            # -----------------------------------------------------
+            
                 
+    # Add this as a helper method in your class
+    def _plot_training_metrics(self, iterations, losses, lrs):
+        """Generates and saves a two-panel plot for Loss and Learning Rate."""
+        plt.figure(figsize=(14, 5))
 
-## Usage
+        # 1. Loss Plot
+        plt.subplot(1, 2, 1)
+        plt.plot(iterations, losses, label="Training Loss", color="blue", linewidth=1.5)
+        plt.xlabel("Iteration")
+        plt.ylabel("Cross Entropy Loss")
+        plt.title("Training Loss Over Time")
+        plt.grid(True, linestyle="--", alpha=0.7)
+        plt.legend()
+
+        # 2. Learning Rate Plot
+        plt.subplot(1, 2, 2)
+        plt.plot(iterations, lrs, label="Learning Rate", color="orange", linewidth=1.5)
+        plt.xlabel("Iteration")
+        plt.ylabel("Learning Rate")
+        plt.title("Learning Rate Schedule")
+        plt.grid(True, linestyle="--", alpha=0.7)
+        plt.legend()
+
+        plt.tight_layout()
+        plt.savefig("training_metrics.png", dpi=300)
+        logger.info("Saved training plots to training_metrics.png")
+        # plt.show() # Uncomment if running in an interactive notebook/environmen
+
+## Training script
 if __name__ == '__main__':
     # translate the training text to binary token file
     # tokenizer = FastTokenizer.from_files(vocab_filepath=)
-    training_config = dict()
-    training_config[""]
+    # Open the file in binary mode ("rb")
+    with open("cs336_basics/training_config.toml", "rb") as file:
+        training_config = tomllib.load(file)
+    logger.info(f"===Training config==")
+    logger.info(training_config)
+    trainer = X75_Trainer(**training_config)
+    #load numpy array in memmap mode
+    inputs = np.load("data/output/tinystories_sample_5M.txt-encoded.npy", mmap_mode='r')
+    logger.info(f"input token length {inputs.size}")
+    trainer.train_llm(inputs)

@@ -43,12 +43,15 @@ class FastTokenizer:
             self.merges = [tuple([bytesToShiftedUnicode(element, merge=True) for element in mergePair]) for mergePair in merges]
         else: 
             self.merges = merges
-        
+            
         if (special_tokens): 
             self.special_tokens = sorted(special_tokens, key=len, reverse=True) # todo: sort by order of length
         else: 
             self.special_tokens = special_tokens
         self.merges_rank_map = {merge: id for merge,id in zip(self.merges, range(len(self.merges), 0, -1))} # merge -> rank
+    
+    def get_vocab_size(self): 
+        return len(self.vocab_id_word)
     
     """
     Class method that constructs and returns a Tokenizer from a serialized vocabulary and list of merges (in the 
@@ -59,7 +62,7 @@ class FastTokenizer:
         - special_tokens: list[str] | None = None 
     """
     @classmethod
-    def from_files(cls, vocab_filepath, merges_filepath, special_tokens=None, inputFormatJson=True): 
+    def from_files(cls, vocab_filepath, merges_filepath, special_tokens=None, vocab_file_json=False): 
         # Open the file in read mode
         vocab = {}
         merges = []
@@ -71,7 +74,7 @@ class FastTokenizer:
 
         with open(merges_filepath, "r") as fileMerge:
             # Deserialize file content
-            if inputFormatJson:
+            if vocab_file_json:
                 mergesRaw = json.load(fileMerge)
                 merges = [tuple(merge) for merge in mergesRaw]
             else:
@@ -184,16 +187,44 @@ class FastTokenizer:
             return encodedChunk
     
         
-    def serialize_encode(self, input_path, output_filepath):
-        # Open a raw binary file in append mode
-        with open(output_filepath, 'wb') as outputFile, open(input_path, 'r') as inputFile:
-            # Process your text in batches/chunks
-            for _id in tqdm(self.encode_iterable(inputFile), desc="Writing token ids"):
-                # 1. Tokenize the current chunk
-                uint16_chunk = np.array(_id, dtype=np.uint16)
-                # 3. Write the raw bytes directly to the file
-                uint16_chunk.tofile(outputFile)
+    # def serialize_encode(self, input_path, output_filepath):
+    #     # Open a raw binary file in append mode
+    #     with open(output_filepath, 'wb') as outputFile, open(input_path, 'r') as inputFile:
+    #         # Process your text in batches/chunks
+    #         for _id in tqdm(self.encode_iterable(inputFile), desc="Writing token ids"):
+    #             # 1. Tokenize the current chunk
+    #             uint16_chunk = np.array(_id, dtype=np.uint16)
+    #             # 3. Write the raw bytes directly to the file
+    #             np.save(output_filepath, uint16_chunk)
     
+    def serialize_encode(self, input_path, output_filepath):
+        # Pass 1: Count total tokens to pre-allocate memory map size
+        total_tokens = 0
+        with open(input_path, 'r') as inputFile:
+            for _id in self.encode_iterable(inputFile):
+                total_tokens += len(_id)
+        logger.info(f"Total tokens to serialize: {total_tokens}")
+        
+        # Pre-allocate a .npy-compatible raw memmap file on disk
+        # Use np.lib.format.open_memmap instead of np.memmap
+        # This creates a valid .npy file with the correct header
+        mmap = np.lib.format.open_memmap(
+            output_filepath, 
+            mode='w+', 
+            dtype=np.uint16, 
+            shape=(total_tokens,)
+        )
+        # Pass 2: Write chunk by chunk into the memory map
+        offset = 0
+        with open(input_path, 'r') as inputFile:
+            for _id in tqdm(self.encode_iterable(inputFile), desc="Writing NPY memmap"):
+                chunk_len = len(_id)
+                mmap[offset : offset + chunk_len] = _id
+                offset += chunk_len
+                
+        # Flush changes to disk
+        mmap.flush()
+        
     """
     -> Iterator[int] Given an iterable of 
     strings (e.g., a Python file handle), return a generator that lazily yields token IDs. This is 

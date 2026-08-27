@@ -21,14 +21,18 @@ class AdamW(optim.Optimizer):
         fused: Whether the fused implementation is used (default: None)
     '''
     # def __init__(self, params, lr, beta, epsilon, weight_decay_rate): 
-    def __init__(self, param_groups: list,  lr=1e-3, weight_decay=0.01, betas=(0.9, 0.999), eps=1e-8): 
+    def __init__(self, param_groups: list,  lr=1e-3, weight_decay=0.01, betas=(0.9, 0.999), eps=1e-8, enable_cosine_annealing_lr=False): 
         #validate lr
         if lr < 0:
             raise ValueError(f"Invalid learning rate: {lr}")
         defaults = {"lr": lr, "betas": betas, "eps":eps, "weight_decay": weight_decay}
+        self.enable_cosine_annealing_lr = enable_cosine_annealing_lr
         super().__init__(params=param_groups, defaults=defaults)
     
     def get_lr(self): 
+        return [param_group['lr'] for param_group in self.param_groups]
+    
+    def set_lr(self): 
         return [param_group['lr'] for param_group in self.param_groups]
     
     def step(self, closure: Optional[Callable] = None):
