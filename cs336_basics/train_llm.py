@@ -107,6 +107,7 @@ class X75_Trainer():
                                               warmup_iter_ratio=self.training_config.optim_lr_warmup_ratio, 
                                             cosine_iter_ratio=self.training_config.optim_lr_cosine_ratio, 
                                             lr_min=self.training_config.optim_lr_min)
+        
     """
     Load a checkpoint from src (path or file-likeobject), and then recover the model and optimizer states from that checkpoint. 
     Your function should return the iteration number that was saved to the checkpoint. You can use torch.load(src) to recover what you saved in your save_checkpoint implementation, and the
@@ -123,8 +124,8 @@ class X75_Trainer():
         trainer.training_state = checkpoint[STATE_DICT_TRAINING_STATE]
         return trainer
     
-    def _get_checkpoint_name(self, time): 
-        return self.training_config.training_checkpoint_path + f"{hash(str(self))}-{time}-{self.training_state.current_iteration}.pt"        
+    def _get_checkpoint_name(self, time, iteration, name): 
+        return self.training_config.training_checkpoint_path + f"{name}-{hash(str(self))}-{time}-{iteration}.pt"        
 
     """
     Train the model
@@ -156,6 +157,7 @@ class X75_Trainer():
         current_iteration = self.training_state.current_iteration
         validation_loss = self.training_state.current_validation_loss
         total_params = sum(p.numel() for p in self.model.parameters())
+        model_name=f"X75-{int(total_params/1e6)}M"
         logger.info(f"Model params: {total_params}")
         tokens_trained = self.training_state.current_tokens_processed
         
@@ -205,7 +207,7 @@ class X75_Trainer():
 
                 #checkpointing
                 if (current_iteration % self.training_config.training_checkpoint_every_x_iter == 0): 
-                    path = self._get_checkpoint_name(time=time)
+                    path = self._get_checkpoint_name(time=time, iteration=current_iteration, name=model_name)
                     self.save_checkpoint(path)
                     logger.info(f"saved to save checkpoint: {path}")
                 
@@ -213,7 +215,8 @@ class X75_Trainer():
                 self._plot_training_metrics(tracked_iterations, tracked_losses, tracked_lrs, time)
                 # -----------------------------------------------------
                 mlflow.log_metric("loss", validation_loss, step=current_iteration)
-        mlflow.pytorch.log_model(self.model, name="model", serialization_format="pickle")
+                mlflow.log_metric("learning rate", current_lr, step=current_iteration)
+            mlflow.pytorch.log_model(self.model, name=f"X75 {int(total_params/1e6)}M", serialization_format="pickle")
                 
     # Add this as a helper method in your class
     def _plot_training_metrics(self, iterations, losses, lrs, time):
