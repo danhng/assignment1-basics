@@ -4,6 +4,7 @@ import mlflow
 import numpy as np
 import torch
 from tqdm import tqdm
+from cs336_basics import utils
 from cs336_basics.tokenizer import FastTokenizer
 from cs336_basics.transformer_lm import Transformer_LM
 from cs336_basics.adam_w import AdamW
@@ -244,10 +245,60 @@ class X75_Trainer():
         plt.tight_layout()
         plt.savefig(f"data/{hash(str(self))}-{time}.png", dpi=300)
         logger.info("Saved training plots to training_metrics.png")
-        # plt.show() # Uncomment if running in an interactive notebook/environmen
+    
+    """
+        Generate text
+    """
+    def generate(self, input, max_tokens_generated, temperature, p_sampling_threshold): 
+        # Step 1. Set model in eval mode
+        # Step 2. Iterate through max_tokens_generated
+        # Step 2.1 run the forward pass
+        # Step 2.2. reduce to only the last token' probs
+        # Step 2.2 calculate the last output token's softmax (with temperature scaled logits)
+        # Step 2.3. sample next token from the top p candidate output tokens
+        # Step 2.4. append token ids to output, and input (making new input)
+        self.model.eval()
+        input.to(self.training_config.model_device)
+        # # 1. Get all dimensions except the last one using slicing [:-1]
+        # base_shape = input.size()[:-1]
+        # # 2. Unpack the base shape and add the new last dimension
+        # new_shape = (*base_shape, max_tokens_generated)
+        # # 3. Initialize the new tensor (e.g., with zeros)
+        # # It is highly recommended to match the dtype and device of your input
+        # output = torch.empty(new_shape, dtype=input.dtype, device=input.device)
+        output = []
+        for i in range(max_tokens_generated) or output_token_id in self.tokenizer.get_special_tokens_ids():
+            logits = self.model(input_appended) # output of size batch, seq_len, vocab_size
+            last_token_logits = logits[-1:, :] # size 1, vocab_size
+            logits = logits / temperature # scale the logits
+            softmaxes_last_token = utils.softmax(last_token_logits, -1) # 1, vocab_size
+            output_token_id = self.sample_top_p(softmaxes_last_token, p_sampling_threshold).squeeze() # size 1,1
+            # append token ids to output and input appended
+            output.append[output_token_id]
+            input_appended = torch.cat((input_appended, output_token_id), dim=-1)
+        return output
+        
+    """
+    Input: 1, vocab_size
+    Output: token id
+    """
+    def sample_top_p(softmaxes, p=0.9): 
+        # Step 1. get sampling_tokens: the minimum numbers of tokens that have cummulative probs > p
+        sorted_probs, sorted_ids = torch.sort(softmaxes, dim=-1, descending=True)
+        cum_probs = torch.cumsum(sorted_probs, dim=-1)
+        ids_remove = cum_probs > p
+        ids_remove[..., 1:] = ids_remove[..., :-1].clone() # shift by 1 to exclude the sample that pushes the cum over p from ids to remove
+        ids_remove[..., 0] = 0 # make sure the first sample is never to be removed
+        sorted_probs[ids_remove] = 0.0
+        # normalize probs (make sure all probs add up to 1 again) so we could use the multinomial method later 
+        sorted_probs = sorted_probs / torch.sum(sorted_probs, dim=-1, keepdim=True)
+        # Step 2. sample 1 sample from sampling_tokens
+        sorted_sampled_token = torch.multinomial(sorted_probs, num_samples=1) # 1, 1
+        # Step 3. Gather chosen index (indices) along the last dim
+        token_ids = torch.gather(sorted_ids, -1, sorted_sampled_token)
+        return token_ids
 
-## Training script
-if __name__ == '__main__':
+def doTrain(): 
     mlflow.enable_system_metrics_logging()
     # translate the training text to binary token file
     # tokenizer = FastTokenizer.from_files(vocab_filepath=)
@@ -261,3 +312,9 @@ if __name__ == '__main__':
     inputs = np.load("data/output/tinystories_sample_5M.txt-encoded.npy", mmap_mode='r')
     logger.info(f"input token length {inputs.size}")
     trainer.train_llm(inputs)
+
+## Training script
+if __name__ == '__main__':
+    # trainer = X75_Trainer.load_model_from_file("")
+    doTrain()
+    

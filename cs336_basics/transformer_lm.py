@@ -78,5 +78,9 @@ class Transformer_LM(torch.nn.Module):
             output_transformer_block = layer(output_transformer_block)
         output_ln_final = self.ln_final(output_transformer_block)
         output_lm_head = self.lm_head(output_ln_final) 
-        # output_softmax = softmax(output_lm_head, -1)
+        # output_softmax = softmax(output_lm_head, -1) # softmax is used for generating text (inference), not model training
         return output_lm_head
+    
+    
+    
+    

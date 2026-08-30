@@ -37,7 +37,7 @@ class FastTokenizer:
         #word_id is simply the reverse of id_word dict
         
         self.vocab_word_id = {value:key for key, value in self.vocab_id_word.items()}
-
+        
         if isinstance(merges[0][0], bytes): 
             logger.debug("merge input is of bytes type -> convert to unicoded internal vocab")
             self.merges = [tuple([bytesToShiftedUnicode(element, merge=True) for element in mergePair]) for mergePair in merges]
@@ -49,6 +49,12 @@ class FastTokenizer:
         else: 
             self.special_tokens = special_tokens
         self.merges_rank_map = {merge: id for merge,id in zip(self.merges, range(len(self.merges), 0, -1))} # merge -> rank
+        
+        # get list of special token ids
+        self.special_tokens_ids = {token: self.vocab_word_id[token] for token in special_tokens if token in self.vocab_word_id}
+    
+    def get_special_tokens_ids(self): 
+        return self.special_tokens_ids
     
     def get_vocab_size(self): 
         return len(self.vocab_id_word)
