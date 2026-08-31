@@ -17,9 +17,7 @@ class Linear(nn.Module):
         self.device = device # device to store the parameters
         self.dtype = dtype or torch.float32  # Data type of the parameters bf16, fp16 or fp8 etc.
         if weight is not None: 
-            weight.to(device)
-            weight.to(dtype)
-            self.weight = torch.nn.Parameter(weight)
+            self.weight = torch.nn.Parameter(weight.to(device=device, dtype=dtype))
         else: 
             weight = torch.empty(size = (out_features, in_features), dtype=dtype, device=device) # initialize based on Xavier
             std_init_weight = math.sqrt(2/(in_features+out_features))

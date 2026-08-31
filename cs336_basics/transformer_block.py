@@ -51,13 +51,10 @@ class TransformerBlock(nn.Module):
         running the Transformer block on the input features while using RoPE.
     '''
     def forward(self, in_features): 
-        logger.debug(f"Transformer Block{self.block_index}: In feature: {in_features.size()}" )
         out_1_rmsnorm = self.ln1(in_features) # rms norm 1
         out_1_mha = self.attn(out_1_rmsnorm) # mha
         out_1 = in_features + out_1_mha # residual connection
-        
         out_2_rms_norm = self.ln2(out_1) # rms_norm 2
         out_2_ffn = self.ffn(out_2_rms_norm) # swiglu
         out_2 = out_1 + out_2_ffn # residual connection
-        logger.debug(f"Transformer Block{self.block_index}: output size:  {out_2.size()}")
         return out_2

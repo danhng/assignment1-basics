@@ -1,5 +1,6 @@
 from datetime import datetime
 import math
+import sys
 import mlflow
 import numpy as np
 import torch
@@ -16,7 +17,14 @@ import tomllib
 import matplotlib.pyplot as plt
 
 import logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(f'data/log/{datetime.now().strftime("%y%m%d%H%M%S")}.log', mode='a'),  # Log to file
+        logging.StreamHandler(sys.stdout)          # Log to console
+    ]
+)
 logger = logging.getLogger('train_llm')
 
 STATE_DICT_MODEL_STATE = 'model'
@@ -162,13 +170,7 @@ class X75_Trainer():
         logger.info(f"Model params: {total_params}")
         tokens_trained = self.training_state.current_tokens_processed
         
-        # --- ADDED: Lists to track metrics for plotting ---
-        tracked_iterations = []
-        tracked_losses = []
-        tracked_lrs = []
-        
         # todo: validate the training tokens passed is the one used in the checkpoint. 
-
         """
         weights = torch.nn.Parameter(5 * torch.randn((10, 10)))
         opt = SGD([weights], lr=1000)
@@ -196,10 +198,7 @@ class X75_Trainer():
                 current_lr = self.optimizer.get_lr()
                 if isinstance(current_lr, list):
                     current_lr = current_lr[0]
-                tracked_iterations.append(current_iteration)
-                tracked_losses.append(validation_loss.item()) # Use .item() to detach tensor and save memory
-                tracked_lrs.append(current_lr)
-                
+
                 # update state after each iteration
                 self.training_state.current_iteration = current_iteration + 1
                 self.training_state.validation_loss = validation_loss
@@ -210,42 +209,14 @@ class X75_Trainer():
                 if (current_iteration % self.training_config.training_checkpoint_every_x_iter == 0): 
                     path = self._get_checkpoint_name(time=time, iteration=current_iteration, name=model_name)
                     self.save_checkpoint(path)
+                    logger.info(f"MEMORY FOOTPRINT AT STEP: {current_iteration}")
+                    logger.info(torch.cuda.memory_summary())
                     logger.info(f"saved to save checkpoint: {path}")
                 
-                # --- ADDED: Plotting logic after the loop finishes ---
-                self._plot_training_metrics(tracked_iterations, tracked_losses, tracked_lrs, time)
-                # -----------------------------------------------------
                 mlflow.log_metric("loss", validation_loss, step=current_iteration)
                 mlflow.log_metric("learning rate", current_lr, step=current_iteration)
             mlflow.pytorch.log_model(self.model, name=f"X75 {int(total_params/1e6)}M", serialization_format="pickle")
                 
-    # Add this as a helper method in your class
-    def _plot_training_metrics(self, iterations, losses, lrs, time):
-        """Generates and saves a two-panel plot for Loss and Learning Rate."""
-        plt.figure(figsize=(14, 5))
-
-        # 1. Loss Plot
-        plt.subplot(1, 2, 1)
-        plt.plot(iterations, losses, label="Training Loss", color="blue", linewidth=1.5)
-        plt.xlabel("Iteration")
-        plt.ylabel("Cross Entropy Loss")
-        plt.title("Training Loss Over Time")
-        plt.grid(True, linestyle="--", alpha=0.7)
-        plt.legend()
-
-        # 2. Learning Rate Plot
-        plt.subplot(1, 2, 2)
-        plt.plot(iterations, lrs, label="Learning Rate", color="orange", linewidth=1.5)
-        plt.xlabel("Iteration")
-        plt.ylabel("Learning Rate")
-        plt.title("Learning Rate Schedule")
-        plt.grid(True, linestyle="--", alpha=0.7)
-        plt.legend()
-
-        plt.tight_layout()
-        plt.savefig(f"data/{hash(str(self))}-{time}.png", dpi=300)
-        logger.info("Saved training plots to training_metrics.png")
-    
     """
         Generate text
     """

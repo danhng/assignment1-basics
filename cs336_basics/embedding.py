@@ -1,4 +1,3 @@
-import math
 import torch
 
 class TokenEmbedding(torch.nn.Module): 
@@ -13,9 +12,7 @@ class TokenEmbedding(torch.nn.Module):
             torch.nn.init.trunc_normal_(embeddings, 0, std=1, a=-3, b=3)
             self.weight = torch.nn.Parameter(embeddings)
         else: 
-            weights.to(device)
-            weights.to(dtype)
-            self.weight = torch.nn.Parameter(weights)
+            self.weight = torch.nn.Parameter(weights.to(device=device, dtype=dtype))
     
     def forward(self, token_ids: torch.Tensor): 
         return self.weight[token_ids]
