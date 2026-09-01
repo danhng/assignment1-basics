@@ -40,7 +40,6 @@ class Multihead_Self_Attention_Layers(torch.nn.Module):
         K_heads = K.unflatten(dim=-1, sizes=(self.num_heads, int(self.d_model/self.num_heads))).transpose(-2, -3)
         V_heads = V.unflatten(dim=-1, sizes=(self.num_heads, int(self.d_model/self.num_heads))).transpose(-2, -3)
 
-        # todo: add RoPE if rope layer is on 
         seq_length = x.shape[-2]
         if (self.rope is not None):
             if token_positions is None:
@@ -48,6 +47,7 @@ class Multihead_Self_Attention_Layers(torch.nn.Module):
             Q_heads = self.rope(Q_heads, token_positions)
             K_heads = self.rope(K_heads, token_positions)
         # create the mask from triu along the seq_len
+        # TODO: handle the EOS case (if token is EOS, then mask is 0 - don't learn this)
         mask = torch.ones((seq_length, seq_length), dtype=torch.bool, device=self.device)
         mask = torch.tril(mask)
 
@@ -57,8 +57,3 @@ class Multihead_Self_Attention_Layers(torch.nn.Module):
         # multi_head_self_attention = attention_heads_concat @ self.w_o.mT
         multi_head_self_attention = self.output_proj(attention_heads_concat)
         return multi_head_self_attention
-    
-t = torch.Tensor([[1, 2],[3, 4], [5, 6], [7, 8]]) # 4 x 2
-trailing_shape = t.shape[1:] 
-new_b = t.shape[0]/2 
-print(t.reshape(2, int(new_b), *trailing_shape))

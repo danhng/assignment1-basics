@@ -3,6 +3,7 @@ import multiprocessing
 from operator import itemgetter
 import os
 import math
+import sys
 import time
 from typing import BinaryIO
 import regex as re
@@ -189,7 +190,6 @@ def getMaxPairCountCache2(pretokens, initPairCache = False, pairCache = {}, pair
             # zip to create pairs. 
             for i in range(len(wordEncodedChars) - 1): 
                 targetPair = tuple([wordEncodedChars[i], wordEncodedChars[i+1]]) # no need join because this is the first round
-                # todo: iterate through all pair cache instead of words.
                 pairs[targetPair] = pairs.get(targetPair, 0) + wordCount
                 # compare max and lexicographic
                 if (pairs[targetPair] > maxPairCount) or ((pairs[targetPair] == maxPairCount) and (targetPair > maxPair)):
@@ -453,7 +453,7 @@ def run_train_bpe(
     
     if output_path: 
         # Write vocab file
-        fileNameVocab = f"{output_path}-bytes-c{get_max_by_cache}-{get_init_multi_process*process_count}-{vocab_size}-{string_format}-{elapsed_time3:.1f}-vocab.json"        
+        fileNameVocab = f"{output_path}-bytes-{sys.platform}-c{get_max_by_cache}-{get_init_multi_process*process_count}-{vocab_size}-{string_format}-{elapsed_time3:.1f}-vocab.json"        
         serializeVocab = {}
         for key,val in vocab.items(): 
             serializeVocab[key] = val

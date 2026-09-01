@@ -54,8 +54,8 @@ class X75_Trainer():
         state = {
             STATE_DICT_MODEL_STATE:self.model.state_dict(), 
             STATE_DICT_OPTIM_STATE:self.optimizer.state_dict(), 
-            STATE_DICT_TRAINING_STATE:self.training_state, 
-            STATE_DICT_TRAINING_CONFIG:self.training_config, 
+            STATE_DICT_TRAINING_STATE:vars(self.training_state), 
+            STATE_DICT_TRAINING_CONFIG:vars(self.training_config), 
         }
         torch.save(obj=state, f=out)
         return state
@@ -77,7 +77,14 @@ class X75_Trainer():
         self.training_config.model_num_mha_heads = kwargs.get('model_num_mha_heads')
         self.training_config.model_d_ff = kwargs.get('model_d_ff')
         self.training_config.model_d_model = kwargs.get('model_d_model')
-        self.training_config.model_dtype_weight = getattr(torch, kwargs.get('model_dtype_weight','float32'))
+        dtype_val = kwargs.get('model_dtype_weight', 'float32')
+        # If it's a string (fresh start), look it up in torch
+        if isinstance(dtype_val, str):
+            self.training_config.model_dtype_weight = getattr(torch, dtype_val)
+        # If it's already a dtype (loaded from checkpoint), assign it directly
+        else:
+            self.training_config.model_dtype_weight = dtype_val
+        # self.training_config.model_dtype_weight = getattr(torch, kwargs.get('model_dtype_weight','float32'))
         self.training_config.model_device = torch.device(kwargs.get('model_device'))
         self.training_config.model_rope_use_rope = kwargs.get('model_rope_use_rope', True)
         self.training_config.model_rope_theta = kwargs.get('model_rope_theta', 10000)
@@ -125,8 +132,8 @@ class X75_Trainer():
     @classmethod
     def load_model_from_file(cls, src): 
         # Load the checkpoint dictionary
-        checkpoint = torch.load(src)
-        trainer = X75_Trainer(checkpoint[STATE_DICT_TRAINING_CONFIG])
+        checkpoint = torch.load(src, weights_only=False)
+        trainer = X75_Trainer(**checkpoint[STATE_DICT_TRAINING_CONFIG])
         # Restore the model and optimizer states
         trainer.model.load_state_dict(checkpoint[STATE_DICT_MODEL_STATE])
         trainer.optimizer.load_state_dict(checkpoint[STATE_DICT_OPTIM_STATE])    
@@ -210,7 +217,8 @@ class X75_Trainer():
                     path = self._get_checkpoint_name(time=time, iteration=current_iteration, name=model_name)
                     self.save_checkpoint(path)
                     logger.info(f"MEMORY FOOTPRINT AT STEP: {current_iteration}")
-                    logger.info(torch.cuda.memory_summary())
+                    if (self.training_config.model_device.type == 'cuda'):
+                        logger.info(torch.cuda.memory_summary())
                     logger.info(f"saved to save checkpoint: {path}")
                 
                 mlflow.log_metric("loss", validation_loss, step=current_iteration)
@@ -221,6 +229,8 @@ class X75_Trainer():
         Generate text
     """
     def generate(self, input, max_tokens_generated, temperature, p_sampling_threshold): 
+        # Step 0. turn input text to tensor
+        input_tensor = torch.tensor([self.tokenizer.encode(str) for str in input], dtype=torch.int32, device=self.training_config.model_device)
         # Step 1. Set model in eval mode
         # Step 2. Iterate through max_tokens_generated
         # Step 2.1 run the forward pass
@@ -229,7 +239,6 @@ class X75_Trainer():
         # Step 2.3. sample next token from the top p candidate output tokens
         # Step 2.4. append token ids to output, and input (making new input)
         self.model.eval()
-        input.to(self.training_config.model_device)
         # # 1. Get all dimensions except the last one using slicing [:-1]
         # base_shape = input.size()[:-1]
         # # 2. Unpack the base shape and add the new last dimension
@@ -238,22 +247,37 @@ class X75_Trainer():
         # # It is highly recommended to match the dtype and device of your input
         # output = torch.empty(new_shape, dtype=input.dtype, device=input.device)
         output = []
-        for i in range(max_tokens_generated) or output_token_id in self.tokenizer.get_special_tokens_ids():
-            logits = self.model(input_appended) # output of size batch, seq_len, vocab_size
-            last_token_logits = logits[-1:, :] # size 1, vocab_size
+        input_appended = input_tensor
+        for i in range(max_tokens_generated):
+            logger.debug(f"Input appended: {input_appended}")
+            logits = self.model(input_appended) # output of size seq_len, vocab_size
+            last_token_logits = logits[:, -1:, :] # size batch, 1, vocab_size
+            # todo - high: implement top k. 
+            last_token_logits = self.top_k(last_token_logits, 50)
             logits = logits / temperature # scale the logits
-            softmaxes_last_token = utils.softmax(last_token_logits, -1) # 1, vocab_size
-            output_token_id = self.sample_top_p(softmaxes_last_token, p_sampling_threshold).squeeze() # size 1,1
+            softmaxes_last_token = utils.softmax(last_token_logits, -1) # batch, 1, vocab_size
+            #softmaxes_last_token_top_k = 
+            output_token_id = self.sample_top_p(softmaxes_last_token, p_sampling_threshold) # size batch, 1,1
+            output_int = output_token_id.squeeze().item()
+            logging.debug(f"iteration {i} output: {output_token_id.item()} -> {self.tokenizer.vocab_id_word[output_int]}")
             # append token ids to output and input appended
-            output.append[output_token_id]
-            input_appended = torch.cat((input_appended, output_token_id), dim=-1)
+            output.append(output_int)
+            if (output_int in self.tokenizer.get_special_tokens_ids()): 
+                break
+            else:
+                input_appended = torch.cat((input_appended, output_token_id), dim=-1)
         return output
         
+    
+    def sample_top_k (logits, k): 
+        return logits
     """
     Input: 1, vocab_size
     Output: token id
     """
-    def sample_top_p(softmaxes, p=0.9): 
+    def sample_top_p(self, softmaxes, p=0.9): 
+        if softmaxes.dim() == 3:
+            softmaxes = softmaxes.squeeze(1)
         # Step 1. get sampling_tokens: the minimum numbers of tokens that have cummulative probs > p
         sorted_probs, sorted_ids = torch.sort(softmaxes, dim=-1, descending=True)
         cum_probs = torch.cumsum(sorted_probs, dim=-1)
@@ -262,30 +286,34 @@ class X75_Trainer():
         ids_remove[..., 0] = 0 # make sure the first sample is never to be removed
         sorted_probs[ids_remove] = 0.0
         # normalize probs (make sure all probs add up to 1 again) so we could use the multinomial method later 
-        sorted_probs = sorted_probs / torch.sum(sorted_probs, dim=-1, keepdim=True)
+        sorted_probs = sorted_probs / torch.sum(sorted_probs, dim=-1, keepdim=False)
         # Step 2. sample 1 sample from sampling_tokens
-        sorted_sampled_token = torch.multinomial(sorted_probs, num_samples=1) # 1, 1
+        sorted_sampled_token = torch.multinomial(sorted_probs, num_samples=1) # batch, 1
         # Step 3. Gather chosen index (indices) along the last dim
         token_ids = torch.gather(sorted_ids, -1, sorted_sampled_token)
         return token_ids
 
-def doTrain(): 
+def doTrain(input_data_set_path, config_training_path): 
     mlflow.enable_system_metrics_logging()
     # translate the training text to binary token file
     # tokenizer = FastTokenizer.from_files(vocab_filepath=)
     # Open the file in binary mode ("rb")
-    with open("cs336_basics/training_config.toml", "rb") as file:
+    with open(config_training_path, "rb") as file:
         training_config = tomllib.load(file)
     logger.info(f"===Training config==")
     logger.info(training_config)
     trainer = X75_Trainer(**training_config)
     #load numpy array in memmap mode
-    inputs = np.load("data/output/tinystories_sample_5M.txt-encoded.npy", mmap_mode='r')
+    inputs = np.load(input_data_set_path, mmap_mode='r')
     logger.info(f"input token length {inputs.size}")
     trainer.train_llm(inputs)
 
 ## Training script
 if __name__ == '__main__':
-    # trainer = X75_Trainer.load_model_from_file("")
-    doTrain()
+    #"data/output/tinystories_sample_5M.txt-encoded-darwin.npy"
+    trainer = X75_Trainer.load_model_from_file("data/checkpoint/X75-14M-6388329099797006412-260831203714-200.pt")
+    input = ["Jenny was a very proud human"]
+    response = trainer.generate(input=input, max_tokens_generated=20, temperature=1, p_sampling_threshold=0.9)
+    logging.info(f"Generated response: {trainer.tokenizer.decode(response)}")
+    # doTrain(input_data_set_path="data/output/tinystories_sample_5M.txt-encoded-darwin.npy", config_training_path="config/training_config.toml")
     

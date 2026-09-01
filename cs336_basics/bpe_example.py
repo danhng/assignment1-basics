@@ -88,7 +88,6 @@ def bpe_example(text, loopCount = 1):
         for line_pretoken in line_pretokens: 
             line_pretoken_bytes = line_pretoken.encode('utf-8')
             logger.debug(type(line_pretoken_bytes[0]))
-            # todo: update the pre token to reflect the new merges each round, output: list[tuple[bytes,...]]
             pre_tokens[line_pretoken_bytes] = pre_tokens.get(line_pretoken_bytes, 0) + 1
     logger.debug(f"pre token result: {pre_tokens}")
     

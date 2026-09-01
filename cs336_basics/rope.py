@@ -1,6 +1,7 @@
 import torch
 from einops import repeat
 
+# todo - high: handle the left pads sequence, leftmost pads should be assigned position 0s so they don't change text tokens positions. 
 class RotaryPositionalEmbedding(torch.nn.Module): 
     def __init__(self, theta: float, d_k: int, max_seq_len: int, device=None, rotate_adjacent = True): 
         super().__init__()
@@ -9,7 +10,6 @@ class RotaryPositionalEmbedding(torch.nn.Module):
         self.max_seq_len = max_seq_len # maximum input sequence length
         self.device = device # Device to store the buffer on
         self.rotated_adjacent = rotate_adjacent # Device to store the buffer on
-        # todo: calculate the cos, sin cache (size max_sequence_len, d_k) (cos(i, k) = cos(i*theta^(-2*k/d)))
         # https://discuss.pytorch.org/t/what-is-the-difference-between-register-buffer-and-register-parameter-of-nn-module/32723/9
         self.cos_cache = torch.zeros(max_seq_len, d_k//2)
         range_d_k = torch.arange(0, d_k, 2) # size d_k/2

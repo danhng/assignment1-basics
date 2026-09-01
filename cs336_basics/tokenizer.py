@@ -151,7 +151,7 @@ class FastTokenizer:
         for match in matches: 
             wordBytes = match.group().encode("utf-8")
             transformedWordChars = bytesToShiftedUnicode(wordBytes)
-            logger.debug(f"{match} -> utf8 bytes: <{wordBytes}> -> transformed: <{transformedWordChars}>")
+            # logger.debug(f"{match} -> utf8 bytes: <{wordBytes}> -> transformed: <{transformedWordChars}>")
             # 2. while no matching new pair exists, find and merge the highest ranked pair in the current bytes
             maxPair = self._findHighestRank(transformedWordChars)
             while maxPair[1] > 0: 
@@ -186,6 +186,7 @@ class FastTokenizer:
             lastText = text[lastProcessedIndex:]
             encodedChunk = self._encode(lastText)
             output.extend(encodedChunk) # append text encoded
+            logger.debug([self.vocab_id_word[encodedToken] for encodedToken in output])
             return output
         else: 
             logger.debug("No split token is provided -> adding whole text")
