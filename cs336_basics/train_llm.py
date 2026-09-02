@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 
 import logging
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler(f'data/log/{datetime.now().strftime("%y%m%d%H%M%S")}.log', mode='a'),  # Log to file
@@ -278,10 +278,21 @@ class X75_Trainer():
             - k (int): the top k result
     """
     def sample_top_k (self, logits, k): 
-        _, sorted_token_ids = torch.sort(logits, dim=-1, descending=True)
+        # _, sorted_token_ids = torch.sort(logits, dim=-1, descending=True)
+        # k_min = min(k, logits.shape[-1])
+        # top_k_ids = sorted_token_ids[..., k_min:]
+        # logits.scatter_(dim=-1, index=top_k_ids, value=float('-inf'))
         k_min = min(k, logits.shape[-1])
-        top_k_ids = sorted_token_ids[..., k_min:]
-        logits.scatter_(dim=-1, index=top_k_ids, value=float('-inf'))
+    
+        # 1. Get the values of the top 'k' tokens directly
+        top_k_values, _ = torch.topk(logits, k_min, dim=-1)
+        # 2. Extract the smallest value in that top-k list (the threshold)
+        # The output is shape (batch_size, 1)
+        kth_values = top_k_values[..., -1:] 
+        # 3. Create a boolean mask: anything smaller than the threshold is rejected
+        indices_to_remove = logits < kth_values
+        # 4. Fill those rejected positions with -inf
+        logits.masked_fill_(indices_to_remove, float('-inf'))
         return logits
     """
     Input: 1, vocab_size
@@ -325,6 +336,8 @@ if __name__ == '__main__':
     #"data/output/tinystories_sample_5M.txt-encoded-darwin.npy"
     trainer = X75_Trainer.load_model_from_file("data/checkpoint/X75-14M-6388329099797006412-260831203714-200.pt")
     input = ["Jenny was a very proud human"]
+    # logits = torch.Tensor([[1, 2, 3, 4], [1,2,3,4]])
+    # print(trainer.sample_top_k(logits, 2))
     response = trainer.predict(input=input, max_tokens_generated=100, temperature=1, 
                                do_top_k_sampling=True, k_threshold=10, do_top_p_sampling=True,  p_threshold=0.9)
     logging.info(f"Generated response: {trainer.tokenizer.decode(response)}")
