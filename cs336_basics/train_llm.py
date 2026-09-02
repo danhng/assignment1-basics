@@ -228,7 +228,7 @@ class X75_Trainer():
     """
         Generate text
     """
-    def generate(self, input, max_tokens_generated, temperature, p_sampling_threshold): 
+    def predict(self, input, max_tokens_generated, temperature, do_top_k_sampling=True, k_threshold=50, do_top_p_sampling=True, p_threshold=0.9): 
         # Step 0. turn input text to tensor
         input_tensor = torch.tensor([self.tokenizer.encode(str) for str in input], dtype=torch.int32, device=self.training_config.model_device)
         # Step 1. Set model in eval mode
@@ -251,13 +251,17 @@ class X75_Trainer():
         for i in range(max_tokens_generated):
             logger.debug(f"Input appended: {input_appended}")
             logits = self.model(input_appended) # output of size seq_len, vocab_size
+            if do_top_k_sampling: 
+                self.sample_top_k(logits, k_threshold)
             last_token_logits = logits[:, -1:, :] # size batch, 1, vocab_size
-            # todo - high: implement top k. 
-            last_token_logits = self.top_k(last_token_logits, 50)
-            logits = logits / temperature # scale the logits
+            last_token_logits = last_token_logits / temperature # scale the logits
             softmaxes_last_token = utils.softmax(last_token_logits, -1) # batch, 1, vocab_size
             #softmaxes_last_token_top_k = 
-            output_token_id = self.sample_top_p(softmaxes_last_token, p_sampling_threshold) # size batch, 1,1
+            if do_top_p_sampling: 
+                output_token_id = self.sample_top_p(softmaxes_last_token, p_threshold) # size batch, 1,1
+            # fall back to highest prob text
+            else: 
+                output_token_id = torch.argmax(softmaxes_last_token, dim=-1,keepdim=False)
             output_int = output_token_id.squeeze().item()
             logging.debug(f"iteration {i} output: {output_token_id.item()} -> {self.tokenizer.vocab_id_word[output_int]}")
             # append token ids to output and input appended
@@ -268,8 +272,16 @@ class X75_Trainer():
                 input_appended = torch.cat((input_appended, output_token_id), dim=-1)
         return output
         
-    
-    def sample_top_k (logits, k): 
+    """
+        Mask the lowest logits (apart from top k) to -inf
+        Input: 
+            - k (int): the top k result
+    """
+    def sample_top_k (self, logits, k): 
+        _, sorted_token_ids = torch.sort(logits, dim=-1, descending=True)
+        k_min = min(k, logits.shape[-1])
+        top_k_ids = sorted_token_ids[..., k_min:]
+        logits.scatter_(dim=-1, index=top_k_ids, value=float('-inf'))
         return logits
     """
     Input: 1, vocab_size
@@ -286,7 +298,7 @@ class X75_Trainer():
         ids_remove[..., 0] = 0 # make sure the first sample is never to be removed
         sorted_probs[ids_remove] = 0.0
         # normalize probs (make sure all probs add up to 1 again) so we could use the multinomial method later 
-        sorted_probs = sorted_probs / torch.sum(sorted_probs, dim=-1, keepdim=False)
+        sorted_probs = sorted_probs / torch.sum(sorted_probs, dim=-1, keepdim=True)
         # Step 2. sample 1 sample from sampling_tokens
         sorted_sampled_token = torch.multinomial(sorted_probs, num_samples=1) # batch, 1
         # Step 3. Gather chosen index (indices) along the last dim
@@ -311,9 +323,10 @@ def doTrain(input_data_set_path, config_training_path):
 ## Training script
 if __name__ == '__main__':
     #"data/output/tinystories_sample_5M.txt-encoded-darwin.npy"
-    # trainer = X75_Trainer.load_model_from_file("data/checkpoint/X75-14M-6388329099797006412-260831203714-200.pt")
-    # input = ["Jenny was a very proud human"]
-    # response = trainer.generate(input=input, max_tokens_generated=20, temperature=1, p_sampling_threshold=0.9)
-    # logging.info(f"Generated response: {trainer.tokenizer.decode(response)}")
-    doTrain(input_data_set_path="data/output/TinyStoriesV2-GPT4-train.txt-encoded-linux.npy", config_training_path="config/training_config.toml")
+    trainer = X75_Trainer.load_model_from_file("data/checkpoint/X75-14M-6388329099797006412-260831203714-200.pt")
+    input = ["Jenny was a very proud human"]
+    response = trainer.predict(input=input, max_tokens_generated=100, temperature=1, 
+                               do_top_k_sampling=True, k_threshold=10, do_top_p_sampling=True,  p_threshold=0.9)
+    logging.info(f"Generated response: {trainer.tokenizer.decode(response)}")
+    # doTrain(input_data_set_path="data/output/TinyStoriesV2-GPT4-train.txt-encoded-linux.npy", config_training_path="config/training_config.toml")
     
