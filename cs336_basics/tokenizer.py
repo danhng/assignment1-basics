@@ -1,5 +1,7 @@
 from collections.abc import Iterable
 import json
+import os
+import concurrent
 import numpy as np
 import regex as re
 from tqdm import tqdm
@@ -193,25 +195,52 @@ class FastTokenizer:
             encodedChunk = self._encode(text)
             return encodedChunk
     
-        
-    # def serialize_encode(self, input_path, output_filepath):
-    #     # Open a raw binary file in append mode
-    #     with open(output_filepath, 'wb') as outputFile, open(input_path, 'r') as inputFile:
-    #         # Process your text in batches/chunks
-    #         for _id in tqdm(self.encode_iterable(inputFile), desc="Writing token ids"):
-    #             # 1. Tokenize the current chunk
-    #             uint16_chunk = np.array(_id, dtype=np.uint16)
-    #             # 3. Write the raw bytes directly to the file
-    #             np.save(output_filepath, uint16_chunk)
     
-    def serialize_encode(self, input_path, output_filepath):
+    def read_text_chunks(self, filepath, batch_size):
+        with open(filepath, 'rb') as f:
+            while True:
+                chunk = f.read(batch_size)
+                if not chunk:
+                    break
+                last_newline = chunk.rfind(b'\n')
+                if last_newline == -1 and len(chunk) == batch_size:
+                    # EDGE CASE: No newline found in the whole 64MB!
+                    # f.readline() grabs the remainder of this exceptionally long line.
+                    rest_of_line = f.readline()
+                    valid_chunk = chunk + rest_of_line
+                    
+                elif last_newline != -1 and len(chunk) == batch_size:
+                    # NORMAL CASE: Slice at the newline and rewind the leftovers
+                    valid_chunk = chunk[:last_newline + 1]
+                    leftover_bytes = len(chunk) - last_newline - 1
+                    f.seek(-leftover_bytes, os.SEEK_CUR)
+                    
+                else:
+                    # EOF CASE: Last chunk of the file
+                    valid_chunk = chunk
+                yield valid_chunk.decode('utf-8')
+    
+    def serialize_encode(self, input_path, output_filepath, batch_size_mb):
         # Pass 1: Count total tokens to pre-allocate memory map size
         total_tokens = 0
-        with open(input_path, 'r') as inputFile:
-            for _id in self.encode_iterable(inputFile):
-                total_tokens += len(_id)
-        logger.info(f"Total tokens to serialize: {total_tokens}")
+        batch_size_bytes = batch_size_mb * 1024 * 1024
+        temp_bin_path = output_filepath + ".tmp.bin"
+        # with open(input_path, 'r') as inputFile:
+        batch = 0
         
+        file_size = os.path.getsize(input_path)
+        expected_batches = int(file_size / batch_size_bytes) + 1
+        
+        chunks = self.read_text_chunks(input_path, batch_size_bytes)
+        with concurrent.futures.ProcessPoolExecutor() as executor:
+            with open(temp_bin_path, 'wb') as temp_file:
+                for _id in tqdm(executor.map(self.encode, chunks), desc="Parallel Chunk Reading to count tokens"):
+                    uint16_chunk = np.array(_id, dtype=np.uint16)
+                    total_tokens += len(uint16_chunk)
+                    batch = batch + 1
+                    logger.info(f"Total tokens counted: {total_tokens}, batch {batch}/{expected_batches}")
+                    temp_file.write(uint16_chunk.tobytes())
+                
         # Pre-allocate a .npy-compatible raw memmap file on disk
         # Use np.lib.format.open_memmap instead of np.memmap
         # This creates a valid .npy file with the correct header
@@ -222,15 +251,21 @@ class FastTokenizer:
             shape=(total_tokens,)
         )
         # Pass 2: Write chunk by chunk into the memory map
-        offset = 0
-        with open(input_path, 'r') as inputFile:
-            for _id in tqdm(self.encode_iterable(inputFile), desc="Writing NPY memmap"):
-                chunk_len = len(_id)
-                mmap[offset : offset + chunk_len] = _id
-                offset += chunk_len
+        with open(temp_bin_path, 'rb') as temp_file:
+            copy_chunk_bytes = 100 * 1024 * 1024
+            offset = 0
+            while True:
+                raw_bytes = temp_file.read(copy_chunk_bytes)
+                if not raw_bytes:
+                    break
+                arr = np.frombuffer(raw_bytes, dtype=np.uint16)
+                mmap[offset : offset + len(arr)] = arr
+                offset += len(arr)
                 
         # Flush changes to disk
         mmap.flush()
+        os.remove(temp_bin_path)
+        logger.info("Serialization complete!")
         
     """
     -> Iterator[int] Given an iterable of 

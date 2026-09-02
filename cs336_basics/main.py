@@ -38,13 +38,28 @@ def tokenize_text(config):
     datasetEncode = config.get("datasetEncode")
     vocabPath = config.get("vocabPath")
     mergesPath = config.get("mergesPath")
+    batch_size_mb = config.get("batch_size_mb")
     tokenizerr = FastTokenizer.from_files(vocab_filepath=vocabPath, merges_filepath=mergesPath, special_tokens=[splitTextToken], vocab_file_json=False)
-    tokenizerr.serialize_encode(f"data/{datasetEncode}", f"data/output/{datasetEncode}-encoded-{sys.platform}.npy")
+    tokenizerr.serialize_encode(f"data/{datasetEncode}", f"data/output/{datasetEncode}-encoded-{sys.platform}.npy", batch_size_mb)
 
 ## Usage
 if __name__ == '__main__':
-    with open("config/tokenizer.toml", "rb") as file:
-        # bpe_training_config = tomllib.load(file)
-        tokenizer_config = tomllib.load(file)
-    tokenize_text(config=tokenizer_config)
-    # train_bpe(bpe_training_config)
+    # Load the file in read-only memory-mapped mode
+    array_meta = np.load('data/output/TinyStoriesV2-GPT4-train.txt-encoded-linux.npy', mmap_mode='r')
+    # Get the dimensions (e.g., (1080, 1920, 3))
+    print("Shape:", array_meta.shape)
+    # Get the total number of elements
+    print("Total elements:", array_meta.size)
+    # Get the memory size in bytes (total elements * bytes per element)
+    print("Bytes:", array_meta.nbytes)
+ 
+    # with open("config/tokenizer.toml", "rb") as file:
+    #     tokenizer_config = tomllib.load(file)
+    # tokenize_text(config=tokenizer_config)
+    
+    # with open("config/bpe_training.toml", "rb") as file:
+    #     # bpe_training_config = tomllib.load(file)
+    #     bpe_config = tomllib.load(file)
+    # train_bpe(bpe_config)
+    
+    pass

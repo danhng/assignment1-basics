@@ -311,9 +311,9 @@ def doTrain(input_data_set_path, config_training_path):
 ## Training script
 if __name__ == '__main__':
     #"data/output/tinystories_sample_5M.txt-encoded-darwin.npy"
-    trainer = X75_Trainer.load_model_from_file("data/checkpoint/X75-14M-6388329099797006412-260831203714-200.pt")
-    input = ["Jenny was a very proud human"]
-    response = trainer.generate(input=input, max_tokens_generated=20, temperature=1, p_sampling_threshold=0.9)
-    logging.info(f"Generated response: {trainer.tokenizer.decode(response)}")
-    # doTrain(input_data_set_path="data/output/tinystories_sample_5M.txt-encoded-darwin.npy", config_training_path="config/training_config.toml")
+    # trainer = X75_Trainer.load_model_from_file("data/checkpoint/X75-14M-6388329099797006412-260831203714-200.pt")
+    # input = ["Jenny was a very proud human"]
+    # response = trainer.generate(input=input, max_tokens_generated=20, temperature=1, p_sampling_threshold=0.9)
+    # logging.info(f"Generated response: {trainer.tokenizer.decode(response)}")
+    doTrain(input_data_set_path="data/output/TinyStoriesV2-GPT4-train.txt-encoded-linux.npy", config_training_path="config/training_config.toml")
     

@@ -45,6 +45,8 @@ def find_chunk_boundaries(
     for bi in tqdm(range(len(chunk_boundaries)), desc="find_chunk_boundaries"):
         initial_position = chunk_boundaries[bi]
         file.seek(initial_position)  # Start at boundary guess
+        # Calculate how much to backtrack to prevent splitting the token
+        overlap = max(0, len(split_special_token) - 1)
         while True:
             mini_chunk = file.read(mini_chunk_size)  # Read a mini chunk
 
@@ -58,7 +60,10 @@ def find_chunk_boundaries(
             if found_at != -1:
                 chunk_boundaries[bi] = initial_position + found_at
                 break
-            initial_position += mini_chunk_size
+            # Advance the logical position, but subtract the overlap
+            initial_position += (mini_chunk_size - overlap)
+            # Move the actual file pointer back slightly for the next read
+            file.seek(initial_position)
 
     # Make sure all boundaries are unique, but might be fewer than desired_num_chunks
     chunk_boundaries.append(0)
@@ -462,7 +467,7 @@ def run_train_bpe(
             json.dump(serializeVocab, f, indent=4)
         
         # Write merge file
-        fileNameMerges = f"{output_path}-bytes-c{get_max_by_cache}-{get_init_multi_process*process_count}-{vocab_size}-{string_format}-{elapsed_time3:.1f}-merges.json"
+        fileNameMerges = f"{output_path}-bytes-{sys.platform}-c{get_max_by_cache}-{get_init_multi_process*process_count}-{vocab_size}-{string_format}-{elapsed_time3:.1f}-merges.json"
         serializeMerges = []
         if output_merges_json:
             for merge in merges: 
