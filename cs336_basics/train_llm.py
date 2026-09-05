@@ -33,7 +33,7 @@ STATE_DICT_TRAINING_STATE = 'training_state'
 STATE_DICT_TRAINING_CONFIG = 'training_config'
 
 mlflow.set_tracking_uri("sqlite:///mlflow.db")
-mlflow.set_experiment("X75_Trainer")
+mlflow.set_experiment("X75")
 
 """
 Input: 
@@ -190,6 +190,8 @@ class X75_Trainer():
         """
         with mlflow.start_run():
             mlflow.log_params(self.training_config.__dict__)
+            mlflow.log_params({"Total params": total_params})
+            max_tokens_trained = self.training_config.training_max_iterations * self.training_config.training_batch_size * self.training_config.model_context_length
             for current_iteration in tqdm(range(current_iteration, self.training_config.training_max_iterations + 1), desc="Training"):
                 inputs, targets = get_batch(training_tokens, self.training_config.training_batch_size, self.training_config.model_context_length, self.training_config.model_device) # move input and target to device
                 logger.info(f"Step {current_iteration}, loaded inputs, targets of size: {inputs.shape}")
@@ -210,7 +212,7 @@ class X75_Trainer():
                 self.training_state.current_iteration = current_iteration + 1
                 self.training_state.validation_loss = validation_loss
                 self.training_state.current_tokens_processed = self.training_state.current_tokens_processed + inputs.numel()
-                logger.info(f"After step {current_iteration}, tokens trained: {self.training_state.current_tokens_processed}, lr: {self.optimizer.get_lr()}, loss: {validation_loss}")
+                logger.info(f"After step {current_iteration}, tokens trained: {self.training_state.current_tokens_processed}/{max_tokens_trained}, lr: {self.optimizer.get_lr()}, loss: {validation_loss}")
 
                 #checkpointing
                 if (current_iteration % self.training_config.training_checkpoint_every_x_iter == 0): 
@@ -334,12 +336,12 @@ def doTrain(input_data_set_path, config_training_path):
 ## Training script
 if __name__ == '__main__':
     #"data/output/tinystories_sample_5M.txt-encoded-darwin.npy"
-    trainer = X75_Trainer.load_model_from_file("data/checkpoint/X75-14M-6388329099797006412-260831203714-200.pt")
-    input = ["Jenny was a very proud human"]
+    # trainer = X75_Trainer.load_model_from_file("data/checkpoint/X75-14M-6388329099797006412-260831203714-200.pt")
+    # input = ["Jenny was a very proud human"]
     # logits = torch.Tensor([[1, 2, 3, 4], [1,2,3,4]])
     # print(trainer.sample_top_k(logits, 2))
-    response = trainer.predict(input=input, max_tokens_generated=100, temperature=1, 
-                               do_top_k_sampling=True, k_threshold=10, do_top_p_sampling=True,  p_threshold=0.9)
-    logging.info(f"Generated response: {trainer.tokenizer.decode(response)}")
-    # doTrain(input_data_set_path="data/output/TinyStoriesV2-GPT4-train.txt-encoded-linux.npy", config_training_path="config/training_config.toml")
+    # response = trainer.predict(input=input, max_tokens_generated=100, temperature=1, 
+                            #    do_top_k_sampling=True, k_threshold=10, do_top_p_sampling=True,  p_threshold=0.9)
+    # logging.info(f"Generated response: {trainer.tokenizer.decode(response)}")
+    doTrain(input_data_set_path="data/output/TinyStoriesV2-GPT4-train.txt_chunk_aa-encoded-darwin-10048.npy", config_training_path="config/training_config.toml")
     
